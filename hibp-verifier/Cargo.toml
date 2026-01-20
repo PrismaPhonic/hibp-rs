@@ -4,3 +4,19 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+memmap2 = "0.9"
+sha1 = "0.10"
+rdtsc-timer = { git = "https://github.com/PrismaPhonic/rdtsc-timer", package = "rdtsc-timer" }
+
+[dev-dependencies]
+hex-literal = "0.4"
+criterion = "0.5"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+[[bench]]
+name = "breach_check"
+harness = false
+
+[[bin]]
+name = "profile"
+path = "src/bin/profile.rs"
