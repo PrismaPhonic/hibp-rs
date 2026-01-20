@@ -4,14 +4,15 @@
 //! to identify where time is spent. Uses the same zero-allocation techniques
 //! as the library.
 
-use hibp_verifier::{
-    binary_search_sha1t64, dataset_path_from_env, BreachChecker, HEX_CHARS, PREFIX_LEN,
-};
-use memmap2::Mmap;
-use rdtsc_timer::{time, Profiler};
-use sha1::{Digest, Sha1};
 use std::fs::File;
 use std::path::Path;
+
+use hibp_verifier::{
+    BreachChecker, HEX_CHARS, PREFIX_LEN, binary_search_sha1t64, dataset_path_from_env,
+};
+use memmap2::Mmap;
+use rdtsc_timer::{Profiler, time};
+use sha1::{Digest, Sha1};
 
 /// Profile a single password check, broken down by step
 /// Uses the same zero-allocation path building as the library
