@@ -1,0 +1,40 @@
+#+TITLE: hibp-rs
+#+OPTIONS: toc:nil
+
+Rust tools for working with the Have I Been Pwned password hash database.
+
+* Crates
+
+- [[./hibp-downloader/README.org][hibp-downloader]] - Download and convert HIBP data to compact binary format
+- [[./hibp-verifier/README.org][hibp-verifier]] - Check passwords against the breach database
+
+* Quick Start
+
+Download the dataset:
+
+#+begin_src sh
+cargo install --path hibp-downloader
+hibp-downloader --output ./hibp-data
+#+end_src
+
+Check a password:
+
+#+begin_src rust
+use hibp_verifier::BreachChecker;
+use std::path::Path;
+
+let checker = BreachChecker::new(Path::new("./hibp-data"));
+let is_breached = checker.is_breached("password123").unwrap();
+#+end_src
+
+* Storage Format
+
+Both tools use sha1t64, a compact format that truncates SHA1 hashes to 64 bits.
+This reduces storage from 77 GB (original text) to 17 GB while maintaining
+negligible collision probability.
+
+See the individual crate READMEs for detailed documentation.
+
+* License
+
+MIT
