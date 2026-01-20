@@ -1,6 +1,9 @@
 #+TITLE: hibp-verifier
 #+OPTIONS: toc:2
 
+[[https://github.com/PrismaPhonic/hibp-rs/actions][https://img.shields.io/github/actions/workflow/status/PrismaPhonic/hibp-rs/ci.yml?branch=main]]
+[[https://img.shields.io/badge/maintenance-actively--developed-brightgreen]]
+
 A high-performance library for checking passwords against the Have I Been Pwned
 breach database. Uses memory-mapped files and binary search for sub-millisecond
 lookups.
