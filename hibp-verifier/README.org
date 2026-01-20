@@ -58,17 +58,22 @@ workspace root (sibling to the =hibp-verifier= directory).
 
 ** Running Tests
 
-With the environment variable:
+Unit tests that do not require the dataset run by default:
 
 #+begin_src sh
-HIBP_DATA_DIR=/path/to/hibp-data cargo test -p hibp-verifier
+cargo test -p hibp-verifier
 #+end_src
 
-Or using the default location:
+To run tests that require the dataset, use the =--ignored= flag:
 
 #+begin_src sh
-# Assumes dataset exists at hibp-rs/pwnedpasswords-bin/
-cargo test -p hibp-verifier
+HIBP_DATA_DIR=/path/to/hibp-data cargo test -p hibp-verifier -- --ignored
+#+end_src
+
+To run all tests (both regular and ignored):
+
+#+begin_src sh
+HIBP_DATA_DIR=/path/to/hibp-data cargo test -p hibp-verifier -- --include-ignored
 #+end_src
 
 ** Running Benchmarks
