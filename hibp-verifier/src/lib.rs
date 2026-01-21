@@ -24,12 +24,12 @@ pub fn dataset_path_from_env() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .unwrap()
-            .join("pwnedpasswords-bin")
+            .join("pwndpasswords-bin")
     })
 }
 
 /// The length of a sha1t64 record in bytes (truncated 64-bit hash).
-pub const RECORD_SIZE: usize = 8;
+pub const RECORD_SIZE: usize = 6;
 
 /// The length of a SHA1 hash prefix used for file naming (5 hex characters).
 pub const PREFIX_LEN: usize = 5;
@@ -105,20 +105,20 @@ impl<'a> BreachChecker<'a> {
         let file = self.open_file(prefix_hex)?;
         let mmap = unsafe { Mmap::map(&file)? };
 
-        // Extract sha1t64 (first 8 bytes of the hash) for comparison
+        // Extract sha1t48 (bytes 2 to 8 of the hash) for comparison
         // SAFETY: hash is garaunteed to have at least 8 bytes.
-        let search_key: [u8; 8] = unsafe { hash[0..8].try_into().unwrap_unchecked() };
+        let search_key: [u8; 6] = unsafe { hash[2..8].try_into().unwrap_unchecked() };
 
-        Ok(binary_search_sha1t64(&mmap, &search_key))
+        Ok(binary_search_sha1t48(&mmap, &search_key))
     }
 }
 
-/// Binary searches for a sha1t64 hash in a memory-mapped binary file.
+/// Binary searches for a sha1t48 hash in a memory-mapped binary file.
 ///
-/// The file contains fixed-size 8-byte records in sorted order, enabling
+/// The file contains fixed-size 6-byte records in sorted order, enabling
 /// direct index calculation.
 #[inline(always)]
-pub fn binary_search_sha1t64(data: &[u8], search_key: &[u8; 8]) -> bool {
+pub fn binary_search_sha1t48(data: &[u8], search_key: &[u8; 6]) -> bool {
     if data.is_empty() {
         return false;
     }
@@ -191,76 +191,76 @@ mod tests {
     }
 
     #[test]
-    fn test_binary_search_sha1t64() {
+    fn test_binary_search_sha1t48() {
         // Create a small sorted dataset for testing
         let data: Vec<u8> = vec![
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // record 0
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, // record 1
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, // record 2
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // record 3
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // record 0
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x05, // record 1
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, // record 2
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // record 3
         ];
 
         // Test finding existing records
-        assert!(binary_search_sha1t64(
+        assert!(binary_search_sha1t48(
             &data,
-            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]
+            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x01]
         ));
-        assert!(binary_search_sha1t64(
+        assert!(binary_search_sha1t48(
             &data,
-            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05]
+            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x05]
         ));
-        assert!(binary_search_sha1t64(
+        assert!(binary_search_sha1t48(
             &data,
-            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10]
+            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x10]
         ));
-        assert!(binary_search_sha1t64(
+        assert!(binary_search_sha1t48(
             &data,
-            &[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
+            &[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
         ));
 
         // Test not finding non-existent records
-        assert!(!binary_search_sha1t64(
+        assert!(!binary_search_sha1t48(
             &data,
-            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
         ));
-        assert!(!binary_search_sha1t64(
+        assert!(!binary_search_sha1t48(
             &data,
-            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02]
+            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x02]
         ));
-        assert!(!binary_search_sha1t64(
+        assert!(!binary_search_sha1t48(
             &data,
-            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF]
+            &[0x00, 0x00, 0x00, 0x00, 0x00, 0xFF]
         ));
-        assert!(!binary_search_sha1t64(
+        assert!(!binary_search_sha1t48(
             &data,
-            &[0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
         ));
     }
 
     #[test]
     fn test_empty_data() {
         let data: Vec<u8> = vec![];
-        assert!(!binary_search_sha1t64(
+        assert!(!binary_search_sha1t48(
             &data,
-            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]
+            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x01]
         ));
     }
 
     #[test]
     fn test_single_record() {
-        let data: Vec<u8> = vec![0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
+        let data: Vec<u8> = vec![0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
 
-        assert!(binary_search_sha1t64(
+        assert!(binary_search_sha1t48(
             &data,
-            &[0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0]
+            &[0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0]
         ));
-        assert!(!binary_search_sha1t64(
+        assert!(!binary_search_sha1t48(
             &data,
-            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
         ));
-        assert!(!binary_search_sha1t64(
+        assert!(!binary_search_sha1t48(
             &data,
-            &[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
+            &[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
         ));
     }
 }

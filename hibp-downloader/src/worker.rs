@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use tokio::fs;
 
-use crate::conversion::{line_to_sha1t64, prefix_to_hex};
+use crate::conversion::{line_to_sha1t48, prefix_to_hex};
 use crate::error::Error;
 
 /// Maximum retries per prefix download
@@ -20,7 +20,7 @@ pub async fn download_and_write_prefix(
     client: &reqwest::Client,
     output_dir: &Path,
     prefix: u32,
-    records_buf: &mut Vec<[u8; 8]>,
+    records_buf: &mut Vec<[u8; 6]>,
 ) -> Result<(), Error> {
     let prefix_hex = prefix_to_hex(prefix);
     let prefix_str = std::str::from_utf8(&prefix_hex).unwrap();
@@ -46,7 +46,8 @@ pub async fn download_and_write_prefix(
                 match response.text().await {
                     Ok(body) => {
                         records_buf.clear();
-                        let mut record = [0u8; 8];
+
+                        let mut record = [0u8; 6];
 
                         for line in body.lines() {
                             if line.is_empty() {
@@ -54,7 +55,7 @@ pub async fn download_and_write_prefix(
                             }
                             let line_bytes = line.as_bytes();
                             if line_bytes.len() >= 35 {
-                                line_to_sha1t64(prefix, line_bytes, &mut record);
+                                line_to_sha1t48(prefix, line_bytes, &mut record);
                                 records_buf.push(record);
                             }
                         }
@@ -94,8 +95,7 @@ pub async fn worker(
     prefixes: Vec<u32>,
     progress: Arc<AtomicU64>,
 ) -> Result<(), Error> {
-    let mut records_buf: Vec<[u8; 8]> = Vec::with_capacity(2000);
-
+    let mut records_buf: Vec<[u8; 6]> = Vec::with_capacity(2000);
     for prefix in prefixes {
         download_and_write_prefix(&client, &output_dir, prefix, &mut records_buf).await?;
         progress.fetch_add(1, Ordering::Relaxed);
