@@ -1,0 +1,10 @@
+[workspace]
+resolver = "3"
+members = [
+  "hibp-downloader",
+  "hibp-verifier",
+]
+
+[workspace.dependencies]
+hibp-downloader = { path = "hibp-downloader" }
+hibp-verifier = { path = "hibp-verifier" }
