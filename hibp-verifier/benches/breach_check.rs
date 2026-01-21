@@ -1,13 +1,5 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use hibp_verifier::BreachChecker;
-use std::path::PathBuf;
-
-fn dataset_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .join("pwnedpasswords-bin")
-}
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use hibp_verifier::{dataset_path_from_env, BreachChecker};
 
 // 20 commonly used passwords (guaranteed to be in breaches)
 const COMMON_PASSWORDS: &[&str] = &[
@@ -58,7 +50,7 @@ const RANDOM_PASSWORDS: &[&str] = &[
 ];
 
 fn bench_common_passwords(c: &mut Criterion) {
-    let path = dataset_path();
+    let path = dataset_path_from_env();
     let checker = BreachChecker::new(&path);
 
     c.bench_function("common_passwords_20", |b| {
@@ -71,7 +63,7 @@ fn bench_common_passwords(c: &mut Criterion) {
 }
 
 fn bench_random_passwords(c: &mut Criterion) {
-    let path = dataset_path();
+    let path = dataset_path_from_env();
     let checker = BreachChecker::new(&path);
 
     c.bench_function("random_passwords_20", |b| {
@@ -84,7 +76,7 @@ fn bench_random_passwords(c: &mut Criterion) {
 }
 
 fn bench_mixed_passwords(c: &mut Criterion) {
-    let path = dataset_path();
+    let path = dataset_path_from_env();
     let checker = BreachChecker::new(&path);
 
     c.bench_function("mixed_passwords_40", |b| {
