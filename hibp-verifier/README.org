@@ -1,0 +1,143 @@
+#+TITLE: hibp-verifier
+#+OPTIONS: toc:2
+
+A high-performance library for checking passwords against the Have I Been Pwned
+breach database. Uses memory-mapped files and binary search for sub-millisecond
+lookups.
+
+* Features
+
+- Zero-allocation hot path for password checking
+- Memory-mapped file access for efficient I/O
+- O(log n) binary search on sorted sha1t64 records
+- ~2.5 microseconds per lookup on warm cache
+
+* Installation
+
+Add to your =Cargo.toml=:
+
+#+begin_src toml
+[dependencies]
+hibp-verifier = { git = "https://github.com/PrismaPhonic/hibp-rs" }
+#+end_src
+
+* Usage
+
+#+begin_src rust
+use hibp_verifier::BreachChecker;
+use std::path::Path;
+
+let checker = BreachChecker::new(Path::new("/path/to/hibp-data"));
+
+match checker.is_breached("password123") {
+    Ok(true) => println!("Password found in breach database"),
+    Ok(false) => println!("Password not found"),
+    Err(e) => eprintln!("Error: {}", e),
+}
+#+end_src
+
+* Dataset Setup
+
+The verifier requires a pre-downloaded dataset in sha1t64 binary format. Use
+[[../hibp-downloader][hibp-downloader]] to fetch and convert the data:
+
+#+begin_src sh
+hibp-downloader --output /path/to/hibp-data
+#+end_src
+
+** Specifying the Dataset Location
+
+Set the =HIBP_DATA_DIR= environment variable to point to your dataset:
+
+#+begin_src sh
+export HIBP_DATA_DIR=/path/to/hibp-data
+#+end_src
+
+If unset, tests and benchmarks fall back to =pwnedpasswords-bin= in the
+workspace root (sibling to the =hibp-verifier= directory).
+
+** Running Tests
+
+With the environment variable:
+
+#+begin_src sh
+HIBP_DATA_DIR=/path/to/hibp-data cargo test -p hibp-verifier
+#+end_src
+
+Or using the default location:
+
+#+begin_src sh
+# Assumes dataset exists at hibp-rs/pwnedpasswords-bin/
+cargo test -p hibp-verifier
+#+end_src
+
+** Running Benchmarks
+
+#+begin_src sh
+HIBP_DATA_DIR=/path/to/hibp-data cargo bench -p hibp-verifier
+#+end_src
+
+* Binary Format
+
+The library expects a directory containing 1,048,576 files named =00000.bin=
+through =FFFFF.bin=. Each file contains sorted 8-byte sha1t64 records for the
+corresponding SHA1 prefix.
+
+** Record Layout
+
+Each record is the first 8 bytes of a SHA1 hash (truncated to 64 bits). Records are stored in ascending sorted order, enabling binary search.
+
+** Collision Probability
+
+With ~900 million entries, the probability of a false positive (collision) is
+approximately 1 in 10 billion. For breach checking, false positives are harmless since they only cause rejection of a password that could reasonably be avoided.
+
+* Performance
+
+Benchmark results on a modern CPU with data in page cache:
+
+| Benchmark            | Time per batch | Time per password |
+|----------------------+----------------+-------------------|
+| common_passwords_20  | ~53 us         | ~2.65 us          |
+| random_passwords_20  | ~55 us         | ~2.75 us          |
+| mixed_passwords_40   | ~110 us        | ~2.75 us          |
+
+The bottleneck is =File::open= and =mmap= syscall overhead. The actual binary
+search completes in nanoseconds.
+
+* Design
+
+** Zero-Allocation Path Building
+
+The library constructs file paths without heap allocation by writing directly
+into a 512-byte stack buffer:
+
+#+begin_src rust
+let mut path_buf = [0u8; 512];
+// ... copy base path, separator, prefix hex, and ".bin" suffix
+#+end_src
+
+** Memory-Mapped Binary Search
+
+Each prefix file is memory-mapped, allowing the kernel to manage page caching.
+Binary search uses direct indexing since records are fixed-size:
+
+#+begin_src rust
+let offset = mid * RECORD_SIZE;  // RECORD_SIZE = 8
+let record = &data[offset..offset + RECORD_SIZE];
+#+end_src
+
+* Profiling
+
+A profiling binary is included for detailed timing breakdown:
+
+#+begin_src sh
+HIBP_DATA_DIR=/path/to/hibp-data cargo run --release --bin profile
+#+end_src
+
+This shows cycle counts for each step: SHA1 hashing, prefix extraction, file
+open, mmap, and binary search.
+
+* License
+
+MIT
