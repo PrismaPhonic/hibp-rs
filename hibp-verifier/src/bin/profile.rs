@@ -7,9 +7,7 @@
 use std::fs::File;
 use std::path::Path;
 
-use hibp_verifier::{
-    BreachChecker, HEX_CHARS, PREFIX_LEN, binary_search_sha1t64, dataset_path_from_env,
-};
+use hibp_verifier::{BreachChecker, HEX_CHARS, PREFIX_LEN, RECORD_SIZE, dataset_path_from_env};
 use memmap2::Mmap;
 use rdtsc_timer::{Profiler, time};
 use sha1::{Digest, Sha1};
@@ -41,7 +39,7 @@ fn profile_password_check<const N: usize>(
 
     // Step 3: Build file path (zero-allocation, matching library implementation)
     let base = dataset_path.as_os_str().as_encoded_bytes();
-    let mut path_buf = [0u8; 1024];
+    let mut path_buf = [0u8; 512];
     let path_len = base.len() + 1 + PREFIX_LEN + 4; // +4 for ".bin"
     let file_path: &str = time!(profiler, "build_path", {
         path_buf[..base.len()].copy_from_slice(base);
@@ -62,13 +60,13 @@ fn profile_password_check<const N: usize>(
     });
 
     // Step 6: Extract search key
-    let search_key: [u8; 8] = time!(profiler, "extract_search_key", {
-        hash[0..8].try_into().unwrap()
+    let search_key: [u8; 6] = time!(profiler, "extract_search_key", {
+        hash[2..8].try_into().unwrap()
     });
 
     // Step 7: Binary search
     let found: bool = time!(profiler, "binary_search", {
-        binary_search_sha1t64(&mmap, &search_key)
+        mmap.as_chunks::<RECORD_SIZE>().0.binary_search(&search_key).is_ok()
     });
 
     found
