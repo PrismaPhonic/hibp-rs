@@ -166,33 +166,21 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires HIBP dataset"]
     fn test_breached_password() {
         // "password123" is a commonly breached password
         // SHA1: CBFDAC6008F9CAB4083784CBD1874F76618D2A97
         // Prefix: CBFDA
         let path = dataset_path_from_env();
-
-        // Skip test if binary dataset doesn't exist yet
-        if !path.exists() {
-            eprintln!("Skipping test: binary dataset not found at {:?}", path);
-            return;
-        }
-
         let checker = BreachChecker::new(&path);
         let result = checker.is_breached("password123").unwrap();
         assert!(result, "password123 should be found in the breach database");
     }
 
     #[test]
+    #[ignore = "requires HIBP dataset"]
     fn test_non_breached_password() {
         let path = dataset_path_from_env();
-
-        // Skip test if binary dataset doesn't exist yet
-        if !path.exists() {
-            eprintln!("Skipping test: binary dataset not found at {:?}", path);
-            return;
-        }
-
         let checker = BreachChecker::new(&path);
         // "hAwT?}cuC:r#kW5" is a complex random password that shouldn't be in breaches
         let result = checker.is_breached("hAwT?}cuC:r#kW5").unwrap();
