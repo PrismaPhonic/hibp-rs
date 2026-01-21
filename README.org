@@ -1,6 +1,9 @@
 #+TITLE: hibp-rs
 #+OPTIONS: toc:nil
 
+[[https://github.com/PrismaPhonic/hibp-rs/actions][https://img.shields.io/github/actions/workflow/status/PrismaPhonic/hibp-rs/ci.yml?branch=main]]
+[[https://img.shields.io/badge/maintenance-actively--developed-brightgreen]]
+
 Rust tools for working with the Have I Been Pwned password hash database.
 
 * Crates
