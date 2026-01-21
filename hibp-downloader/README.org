@@ -6,7 +6,7 @@
 
 A fast, concurrent downloader for the Have I Been Pwned password hash database.
 Converts the HIBP API responses directly into a compact binary format using
-truncated 64-bit SHA1 hashes (sha1t64).
+truncated 48-bit SHA1 hashes (sha1t48).
 
 * Features
 
@@ -64,13 +64,13 @@ hibp-downloader --output ./hibp-data --force
 
 The downloader produces 1,048,576 files (one per 5-character hex prefix), each
 containing sorted 8-byte records. This format is based on the sha1t64 approach
-from [[https://github.com/oschonrock/hibp][oschonrock/hibp]].
+from [[https://github.com/oschonrock/hibp][oschonrock/hibp]] but we only store the 6 byte suffix. The first 2 bytes are redundant, as the file names themselves contain a 2.5 byte prefix.
 
-** Why sha1t64?
+** Why sha1t48?
 
 The HIBP dataset contains approximately 900 million SHA1 password hashes. Storing
 the full 20-byte hash for each entry requires significant space. By truncating to
-64 bits, we reduce storage by over 4x while maintaining an acceptably low
+48 bits, we reduce storage by over 4x while maintaining an acceptably low
 collision probability.
 
 With ~900 million entries, the probability of at least one collision is
@@ -81,7 +81,7 @@ approximately 1 in 10 billion. For password breach checking, a false positive
 
 Each prefix file (e.g., =00000.bin=, =FFFFF.bin=) contains:
 
-- Fixed 8-byte records
+- Fixed 6-byte records (suffix, avoiding redundant 2 byte prefix)
 - Sorted in ascending order
 - Direct indexing: record N is at byte offset N * 8
 
@@ -89,10 +89,10 @@ This enables O(log n) binary search with no parsing overhead.
 
 ** Storage Comparison
 
-| Format               | Size  | Notes                          |
-|----------------------+-------+--------------------------------|
-| HIBP Text (original) | 77 GB | SHA1:count per line            |
-| sha1t64 binary       | 17 GB | 8 bytes per hash               |
+| Format               | Size  | Notes               |
+|----------------------+-------+---------------------|
+| HIBP Text (original) | 77 GB | SHA1:count per line |
+| sha1t48 binary       | 13 GB | 6 bytes per hash    |
 
 * Design
 
@@ -101,7 +101,7 @@ This enables O(log n) binary search with no parsing overhead.
 The downloader divides the 1,048,576 prefixes evenly among N worker tasks. Each worker:
 
 1. Fetches a prefix range from =api.pwnedpasswords.com/range/{PREFIX}=
-2. Parses the response and converts each line to sha1t64
+2. Parses the response and converts each line to sha1t48
 3. Writes the sorted binary file to disk
 4. Updates the shared progress counter
 
@@ -116,7 +116,7 @@ Failed requests are retried up to 10 times with exponential backoff starting at 
 The hot path for converting API responses to binary avoids heap allocations:
 
 - Prefix-to-hex conversion uses a stack-allocated 5-byte array
-- Line-to-sha1t64 conversion writes directly to an 8-byte output buffer
+- Line-to-sha1t48 conversion writes directly to a 6-byte output buffer
 - Hex-to-nibble conversion is a simple match expression
 
 * Performance
