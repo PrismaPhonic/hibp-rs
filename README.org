@@ -32,8 +32,8 @@ let is_breached = checker.is_breached("password123").unwrap();
 
 * Storage Format
 
-Both tools use sha1t64, a compact format that truncates SHA1 hashes to 64 bits.
-This reduces storage from 77 GB (original text) to 17 GB while maintaining
+Both tools use sha1t64, a compact format that truncates SHA1 hashes to 48 bits.
+This reduces storage from 77 GB (original text) to 13 GB while maintaining
 negligible collision probability.
 
 See the individual crate READMEs for detailed documentation.
