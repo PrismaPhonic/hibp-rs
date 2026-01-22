@@ -5,12 +5,12 @@
 //! as the library.
 
 use std::fs::File;
+use std::io::Read;
 use std::path::Path;
 
 use hibp_verifier::{
     BreachChecker, HEX_CHARS, PREFIX_LEN, binary_search_sha1t48, dataset_path_from_env,
 };
-use memmap2::Mmap;
 use rdtsc_timer::{Profiler, time};
 use sha1::{Digest, Sha1};
 
@@ -52,13 +52,15 @@ fn profile_password_check<const N: usize>(
     });
 
     // Step 4: Open file
-    let file: File = time!(profiler, "file_open", {
+    let mut file: File = time!(profiler, "file_open", {
         File::open(file_path).expect("Failed to open file")
     });
 
-    // Step 5: Memory map
-    let mmap: Mmap = time!(profiler, "mmap", {
-        unsafe { Mmap::map(&file).expect("Failed to mmap") }
+    // Step 5: Read from file.
+    let (buf, n) = time!(profiler, "file_read", {
+        let mut buf = [0u8; 16384];
+        let n = file.read(&mut buf).unwrap();
+        (buf, n)
     });
 
     // Step 6: Extract search key
@@ -68,7 +70,7 @@ fn profile_password_check<const N: usize>(
 
     // Step 7: Binary search
     let found: bool = time!(profiler, "binary_search", {
-        binary_search_sha1t48(&mmap, &search_key)
+        binary_search_sha1t48(&buf[..n], &search_key)
     });
 
     found

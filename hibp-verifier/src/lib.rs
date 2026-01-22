@@ -8,10 +8,9 @@
 
 use std::cmp::Ordering;
 use std::fs::File;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
-use memmap2::Mmap;
 use sha1::{Digest, Sha1};
 
 /// Environment variable name for specifying the HIBP dataset directory.
@@ -63,7 +62,18 @@ impl<'a> BreachChecker<'a> {
         hasher.update(password.as_bytes());
         let hash: [u8; 20] = hasher.finalize().into();
 
-        self.is_hash_breached(&hash)
+        let prefix_hex = Self::prefix_hex(&hash);
+        let mut file = self.open_file(prefix_hex)?;
+
+        // largest file size currently is 14.6KB for 6-byte records (2495 records in that prefix
+        // file) Use a 16KB stack buffer to avoid allocation. This should provide room for
+        // growth over time.
+        let mut buf = [0u8; 16384];
+        let n = file.read(&mut buf)?;
+
+        let search_key: [u8; 6] = unsafe { hash[2..8].try_into().unwrap_unchecked() };
+
+        Ok(binary_search_sha1t48(&buf[..n], &search_key))
     }
 
     /// Returns the prefix for the hash as hex (first 5 hex chars == first 2.5 bytes)
@@ -96,20 +106,6 @@ impl<'a> BreachChecker<'a> {
         let file_path = unsafe { std::str::from_utf8_unchecked(&path_buf[..path_len]) };
 
         File::open(file_path)
-    }
-
-    /// Checks if the given SHA1 hash (as raw bytes) has been found in a data breach.
-    pub fn is_hash_breached(&self, hash: &[u8; 20]) -> io::Result<bool> {
-        let prefix_hex = Self::prefix_hex(hash);
-
-        let file = self.open_file(prefix_hex)?;
-        let mmap = unsafe { Mmap::map(&file)? };
-
-        // Extract sha1t48 (bytes 2 to 8 of the hash) for comparison
-        // SAFETY: hash is garaunteed to have at least 8 bytes.
-        let search_key: [u8; 6] = unsafe { hash[2..8].try_into().unwrap_unchecked() };
-
-        Ok(binary_search_sha1t48(&mmap, &search_key))
     }
 }
 
