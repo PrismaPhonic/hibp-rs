@@ -12,6 +12,7 @@ rdtsc-timer = { git = "https://github.com/PrismaPhonic/rdtsc-timer", package = "
 hex-literal = "0.4"
 criterion = "0.5"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+rand = "0.8"
 
 [[bench]]
 name = "breach_check"
