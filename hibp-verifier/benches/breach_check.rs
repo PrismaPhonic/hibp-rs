@@ -117,10 +117,10 @@ fn bench_mixed_passwords(c: &mut Criterion) {
     });
 }
 
-/// Cold page benchmark for sha1t48 format (6-byte records)
-/// Tests performance with 1M random passwords to maximize cold page misses
-fn bench_cold_pages_sha1t48(c: &mut Criterion) {
-    let passwords = generate_random_passwords(1_000_000);
+/// Cold page benchmark
+/// Tests performance with 100k random passwords to maximize cold page misses
+fn bench_cold_pages(c: &mut Criterion) {
+    let passwords = generate_random_passwords(100_000);
     let path = dataset_path_from_env();
     let checker = BreachChecker::new(&path);
 
@@ -129,25 +129,23 @@ fn bench_cold_pages_sha1t48(c: &mut Criterion) {
     // turn it off. Note: This panics if set to zero duration.
     group.warm_up_time(Duration::from_nanos(1));
 
-    group.bench_function("cold_pages_sha1t48_1M", |b| {
+    group.bench_function("read_100k", |b| {
         b.iter_custom(|iters| {
             let start = Instant::now();
 
-            // Process ALL passwords exactly once, ignoring iters
             for password in &passwords {
                 black_box(checker.is_breached(password).unwrap());
             }
 
             let elapsed = start.elapsed();
             let passwords_checked = passwords.len() as u64;
-
-            // Calculate per-password timing and scale back to match criterion's expected iteration
-            // count
             let time_per_password_ns = elapsed.as_nanos() as f64 / passwords_checked as f64;
             let scaled_nanos = (time_per_password_ns * iters as f64) as u64;
             Duration::from_nanos(scaled_nanos)
         })
     });
+
+    group.finish();
 }
 
 criterion_group!(
@@ -155,6 +153,6 @@ criterion_group!(
     bench_common_passwords,
     bench_random_passwords,
     bench_mixed_passwords,
-    bench_cold_pages_sha1t48,
+    bench_cold_pages,
 );
 criterion_main!(benches);
