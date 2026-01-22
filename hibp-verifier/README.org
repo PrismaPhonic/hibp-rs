@@ -5,15 +5,14 @@
 [[https://img.shields.io/badge/maintenance-actively--developed-brightgreen]]
 
 A high-performance library for checking passwords against the Have I Been Pwned
-breach database. Uses memory-mapped files and binary search for sub-millisecond
-lookups.
+breach database. Uses stack buffer read files and binary search for
+sub-microsecond lookups.
 
 * Features
 
 - Zero-allocation hot path for password checking
-- Memory-mapped file access for efficient I/O
 - O(log n) binary search on sorted sha1t64 records
-- ~2.5 microseconds per lookup on warm cache
+- ~0.9 microseconds per lookup on warm cache
 
 * Installation
 
@@ -106,11 +105,11 @@ Benchmark results on a modern CPU with data in page cache:
 
 | Benchmark            | Time per batch | Time per password |
 |----------------------+----------------+-------------------|
-| common_passwords_20  | ~53 us         | ~2.65 us          |
-| random_passwords_20  | ~55 us         | ~2.75 us          |
-| mixed_passwords_40   | ~110 us        | ~2.75 us          |
+| common_passwords_20  | ~16.773 us     | ~0.844 us         |
+| random_passwords_20  | ~17.677 us     | ~0.884 us         |
+| mixed_passwords_40   | ~36.887 us     | ~0.922 us         |
 
-The bottleneck is =File::open= and =mmap= syscall overhead. The actual binary
+The bottleneck is =File::open= and file read overhead. The actual binary
 search completes in nanoseconds.
 
 * Design
@@ -125,9 +124,9 @@ let mut path_buf = [0u8; 512];
 // ... copy base path, separator, prefix hex, and ".bin" suffix
 #+end_src
 
-** Memory-Mapped Binary Search
+** Binary Search
 
-Each prefix file is memory-mapped, allowing the kernel to manage page caching.
+Each prefix file is read into a stack allocated buffer.
 Binary search uses direct indexing since records are fixed-size:
 
 #+begin_src rust
@@ -144,7 +143,7 @@ HIBP_DATA_DIR=/path/to/hibp-data cargo run --release --bin profile
 #+end_src
 
 This shows cycle counts for each step: SHA1 hashing, prefix extraction, file
-open, mmap, and binary search.
+open, file read, and binary search.
 
 * License
 
