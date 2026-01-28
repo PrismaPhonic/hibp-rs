@@ -1,34 +1,10 @@
+mod common;
+
 use std::time::{Duration, Instant};
 
+use common::generate_random_passwords;
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use hibp_verifier::{BreachChecker, dataset_path_from_env};
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
-
-/// Character sets for password generation
-const ALL_CHARS: &[u8] =
-    b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=[]{}|;:,.<>?";
-
-/// Generates a specified number of random passwords with uniform distribution
-/// Uses a fixed seed for reproducible benchmark results
-pub fn generate_random_passwords(count: usize) -> Vec<String> {
-    let mut rng = StdRng::seed_from_u64(42); // Fixed seed for reproducibility
-    let mut passwords = Vec::with_capacity(count);
-
-    for _ in 0..count {
-        let length = rng.gen_range(8..=64); // Random length between 8 and 64
-        let mut password = String::with_capacity(length);
-
-        for _ in 0..length {
-            let char_index = rng.gen_range(0..ALL_CHARS.len());
-            password.push(ALL_CHARS[char_index] as char);
-        }
-
-        passwords.push(password);
-    }
-
-    passwords
-}
 
 // 20 commonly used passwords (guaranteed to be in breaches)
 const COMMON_PASSWORDS: &[&str] = &[
