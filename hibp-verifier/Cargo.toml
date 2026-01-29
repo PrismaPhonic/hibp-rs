@@ -14,14 +14,14 @@ compio = ["dep:compio"]
 sha1 = "0.10"
 rdtsc-timer = { git = "https://github.com/PrismaPhonic/rdtsc-timer", package = "rdtsc-timer" }
 
-tokio = { version = "1", features = ["rt", "fs", "io-util"], optional = true }
-compio = { version = "0.17", features = ["runtime", "io", "dispatcher"], optional = true }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "fs", "io-util"], optional = true }
+compio = { version = "0.18", features = ["runtime", "io", "fs", "dispatcher", "io-uring"], optional = true }
 
 [dev-dependencies]
 hex-literal = "0.4"
 criterion = { version = "0.5", features = ["async_tokio"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-compio = { version = "0.17", features = ["runtime", "io", "macros", "dispatcher"] }
+compio = { version = "0.18", features = ["runtime", "io", "fs", "dispatcher", "io-uring", "macros", "criterion", "time"] }
 rand = "0.8"
 futures = "0.3"
 

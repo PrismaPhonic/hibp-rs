@@ -12,7 +12,7 @@ sub-microsecond lookups.
 
 - Zero-allocation hot path for password checking (sync API)
 - O(log n) binary search on sorted sha1t48 records
-- ~0.9 microseconds per lookup on warm cache
+- sub microseconds lookups
 - Optional async API with tokio or compio support
 
 * Installation
@@ -101,6 +101,11 @@ fn main() -> std::io::Result<()> {
     })
 }
 #+end_src
+
+** Web Framework Integration
+
+Compio is compatible with ntex's compio runtime feature, making =is_breached_compio=
+suitable for use within ntex web applications.
 
 * Dataset Setup
 
@@ -197,34 +202,42 @@ High concurrency comparison (10k concurrent lookups, 24 worker threads):
 |--------------------+---------+--------------+-----------------------------|
 | =is_breached_async=  | ~31 ms  | ~3.1 us      | *Winner* - tokio thread pool  |
 | =is_breached_compio= | ~46 ms  | ~4.6 us      | 1.5x slower - compio        |
-| tokio::fs          | ~57 ms  | ~5.7 us      | 1.8x slower - not exposed   |
-| std::thread::scope | ~198 ms | ~19.8 us     | OS thread creation overhead |
+| tokio::fs          | ~58 ms  | ~5.8 us      | 2x slower - not exposed     |
+| std::thread::scope | ~192 ms | ~19.2 us     | 6x slower - thread overhead |
 
 *** Method Explanations
 
 **** =is_breached_async= (Recommended)
 
-Uses =tokio::task::spawn_blocking= to run the entire sync file I/O operation on
-tokio's blocking thread pool. The pool is warmed and reused across calls,
-avoiding thread creation overhead. This approach wins because:
+Uses =tokio::task::spawn_blocking= to run the entire sync file I/O operation
+on tokio's blocking thread pool. This is the best choice for most applications
+because:
 
 1. Thread pool threads are pre-spawned and reused
 2. Work-stealing distributes load across all pool threads
 3. Single syscall batch (open + read + close) per operation
+4. Compatible with tokio-based web frameworks (actix-web, axum)
 
-**** =is_breached_compio= (io-uring)
+**** =is_breached_compio= (io-uring alternative)
 
 Uses compio's native io-uring file I/O with a multi-threaded dispatcher.
-Despite io-uring being a more efficient kernel interface, this approach is
-~1.5x slower than spawn_blocking. The compio dispatcher distributes tasks
-across worker threads, but lacks tokio's work-stealing scheduler which more efficiently balances load. The irony here is that io-uring *must* be used with a non work stealing model, because the buffers must stay thread local. This does perform much better than tokio does with io-uring, but still strictly worse than spawn_blocking.
+This is useful when you're already using compio (e.g., with ntex's compio
+runtime) and want to avoid mixing runtimes.
+
+Despite using io-uring, this is ~1.5x slower than tokio's spawn_blocking.
+Investigation revealed the overhead is in compio's io-uring driver:
+
+1. *Extra atomic operations*: Compio calls =squeue.sync()= after every operation
+2. *Arc vs Rc*: Compio uses =Arc= for cross-thread safety even in single-threaded paths
+3. *Cross-thread infrastructure*: Maintains eventfd and waking infrastructure
 
 **** tokio::fs (benchmarked but not exposed)
 
-Uses =tokio::fs::File= for "native" async file access. This is *not exposed* in the library API because it performs worse than =is_breached_async=. It's
-included in benchmarks only to demonstrate why.
+Uses =tokio::fs::File= for "native" async file access. This is *not exposed*
+in the library API because it performs worse than =is_breached_async=.
 
-Tokio's async filesystem API internally wraps *every individual operation* in a separate =spawn_blocking= call:
+Tokio's async filesystem API internally wraps *every individual operation*
+in a separate =spawn_blocking= call:
 
 - =File::open()= → spawn_blocking
 - =file.read()= → spawn_blocking (per call)
