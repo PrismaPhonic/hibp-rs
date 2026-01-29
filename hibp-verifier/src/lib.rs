@@ -1,10 +1,21 @@
 //! Breached password checker using the Have I Been Pwned dataset.
 //!
-//! This library provides zero-allocation password breach checking by memory-mapping
-//! the HIBP dataset files and performing binary search on the sorted sha1t64 hashes.
+//! This library provides zero-allocation password breach checking by reading
+//! the HIBP dataset files and performing binary search on the sorted sha1t48 hashes.
 //!
-//! The binary format uses truncated 64-bit SHA1 hashes (8 bytes per record) stored
+//! The binary format uses truncated 48-bit SHA1 hashes (6 bytes per record) stored
 //! in sorted order, enabling efficient O(log n) binary search with direct indexing.
+//!
+//! # Async Support
+//!
+//! Enable the `tokio` feature for async support. This provides `is_breached_async()`
+//! which uses `spawn_blocking` for file I/O, allowing use from async contexts without
+//! blocking the runtime.
+//!
+//! Optionally you can use the `compio` feature instead to use the `compio`
+//! runtime, which uses a non-work stealing model along with io-uring (io-uring
+//! requires buffers stay thread local, so it doesn't pair well with tokio's
+//! work stealing model)
 
 use std::cmp::Ordering;
 use std::fs::File;
@@ -111,7 +122,7 @@ impl<'a> BreachChecker<'a> {
 
     // Build file path without allocation: base_path + '/' + prefix + ".bin"
     #[inline(always)]
-    fn open_file(&self, prefix_hex: [u8; PREFIX_LEN]) -> io::Result<File> {
+    fn build_path(&self, prefix_hex: [u8; PREFIX_LEN]) -> ([u8; 512], usize) {
         let base = self.dataset_path.as_os_str().as_encoded_bytes();
         let mut path_buf = [0u8; 512];
         let path_len = base.len() + 1 + PREFIX_LEN + 4; // +4 for ".bin"
@@ -120,10 +131,115 @@ impl<'a> BreachChecker<'a> {
         path_buf[base.len() + 1..base.len() + 1 + PREFIX_LEN].copy_from_slice(&prefix_hex);
         path_buf[base.len() + 1 + PREFIX_LEN..path_len].copy_from_slice(b".bin");
 
+        (path_buf, path_len)
+    }
+
+    // Build file path without allocation: base_path + '/' + prefix + ".bin"
+    #[inline(always)]
+    fn open_file(&self, prefix_hex: [u8; PREFIX_LEN]) -> io::Result<File> {
+        let (path_buf, path_len) = self.build_path(prefix_hex);
+
         // SAFETY: path_buf contains valid UTF-8 (base path + '/' + hex prefix + ".bin")
         let file_path = unsafe { std::str::from_utf8_unchecked(&path_buf[..path_len]) };
 
         File::open(file_path)
+    }
+
+    /// Async version of `is_breached` using tokio.
+    ///
+    /// Performs SHA1 hashing and path construction on the async thread,
+    /// then uses `spawn_blocking` only for file I/O.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use hibp_verifier::BreachChecker;
+    /// use std::path::Path;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> std::io::Result<()> {
+    ///     let checker = BreachChecker::new(Path::new("/path/to/hibp-data"));
+    ///
+    ///     if checker.is_breached_async("password123").await? {
+    ///         println!("Password found in breach database!");
+    ///     }
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    #[cfg(feature = "tokio")]
+    pub async fn is_breached_async(&self, password: &str) -> io::Result<bool> {
+        let mut hasher = Sha1::new();
+        hasher.update(password.as_bytes());
+        let hash: [u8; 20] = hasher.finalize().into();
+
+        let search_key: [u8; 6] = unsafe { hash[2..8].try_into().unwrap_unchecked() };
+
+        let prefix_hex = Self::prefix_hex(&hash);
+        let (path_buf, path_len) = self.build_path(prefix_hex);
+
+        // Only file I/O goes into spawn_blocking
+        tokio::task::spawn_blocking(move || {
+            let file_path = unsafe { std::str::from_utf8_unchecked(&path_buf[..path_len]) };
+            let mut file = File::open(file_path)?;
+
+            let mut buf = [0u8; 16384];
+            let mut total = 0usize;
+            loop {
+                match file.read(&mut buf[total..]) {
+                    Ok(0) => break,
+                    Ok(n) => total += n,
+                    Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(e) => return Err(e),
+                }
+            }
+
+            Ok(binary_search_sha1t48(&buf[..total], &search_key))
+        })
+        .await
+        .expect("spawn_blocking task panicked")
+    }
+
+    /// Async version of `is_breached` using compio's native io-uring file I/O.
+    ///
+    /// This method uses compio-fs which provides true async file operations
+    /// via io-uring on Linux.
+    ///
+    /// compio is compatible with ntex's compio runtime feature, making this
+    /// suitable for use within ntex web applications that want to use compio.
+    #[cfg(feature = "compio")]
+    pub async fn is_breached_compio(&self, password: &str) -> io::Result<bool> {
+        use compio::fs::File;
+        use compio::io::AsyncReadAt;
+
+        let mut hasher = Sha1::new();
+        hasher.update(password.as_bytes());
+        let hash: [u8; 20] = hasher.finalize().into();
+
+        let search_key: [u8; 6] = unsafe { hash[2..8].try_into().unwrap_unchecked() };
+
+        let prefix_hex = Self::prefix_hex(&hash);
+        let (path_buf, path_len) = self.build_path(prefix_hex);
+        let file_path = unsafe { std::str::from_utf8_unchecked(&path_buf[..path_len]) };
+
+        let file = File::open(file_path).await?;
+
+        // compio returns the buffer back to us after each operation
+        let mut buf = [0u8; 16384];
+        let mut total = 0usize;
+
+        loop {
+            let buf_result = file.read_at(buf, total as u64).await;
+            buf = buf_result.1;
+            match buf_result.0 {
+                Ok(0) => break,
+                Ok(n) => total += n,
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(e),
+            }
+        }
+
+        Ok(binary_search_sha1t48(&buf[..total], &search_key))
     }
 }
 
@@ -276,5 +392,116 @@ mod tests {
             &data,
             &[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
         ));
+    }
+}
+
+#[cfg(all(test, feature = "tokio"))]
+mod tokio_tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires HIBP dataset"]
+    async fn test_async_breached_password() {
+        let path = dataset_path_from_env();
+        let checker = BreachChecker::new(&path);
+
+        let result = checker.is_breached_async("password123").await.unwrap();
+        assert!(result, "password123 should be found in breach database");
+    }
+
+    #[tokio::test]
+    #[ignore = "requires HIBP dataset"]
+    async fn test_async_non_breached_password() {
+        let path = dataset_path_from_env();
+        let checker = BreachChecker::new(&path);
+
+        let result = checker.is_breached_async("hAwT?}cuC:r#kW5").await.unwrap();
+        assert!(!result, "random password should not be in breach database");
+    }
+
+    #[tokio::test]
+    #[ignore = "requires HIBP dataset"]
+    async fn test_async_matches_sync() {
+        let path = dataset_path_from_env();
+        let checker = BreachChecker::new(&path);
+
+        let passwords = [
+            "password123",
+            "123456",
+            "qwerty",
+            "hAwT?}cuC:r#kW5",
+            "letmein",
+            "xK9#mP2$vL7@nQ4",
+        ];
+
+        for password in passwords {
+            let sync_result = checker.is_breached(password).unwrap();
+            let async_result = checker.is_breached_async(password).await.unwrap();
+            assert_eq!(
+                sync_result, async_result,
+                "sync and async results should match for '{}'",
+                password
+            );
+        }
+    }
+}
+
+#[cfg(all(test, feature = "compio"))]
+mod compio_tests {
+    use compio::runtime as compio_runtime;
+
+    use super::*;
+
+    #[test]
+    #[ignore = "requires HIBP dataset"]
+    fn test_compio_breached_password() {
+        let path = dataset_path_from_env();
+
+        compio_runtime::Runtime::new().unwrap().block_on(async {
+            let checker = BreachChecker::new(&path);
+            let result = checker.is_breached_compio("password123").await.unwrap();
+            assert!(result, "password123 should be found in breach database");
+        });
+    }
+
+    #[test]
+    #[ignore = "requires HIBP dataset"]
+    fn test_compio_non_breached_password() {
+        let path = dataset_path_from_env();
+
+        compio_runtime::Runtime::new().unwrap().block_on(async {
+            let checker = BreachChecker::new(&path);
+            let result = checker.is_breached_compio("hAwT?}cuC:r#kW5").await.unwrap();
+            assert!(!result, "random password should not be in breach database");
+        });
+    }
+
+    #[test]
+    #[ignore = "requires HIBP dataset"]
+    fn test_compio_matches_sync() {
+        let path = dataset_path_from_env();
+
+        compio_runtime::Runtime::new().unwrap().block_on(async {
+            let checker = BreachChecker::new(&path);
+
+            let passwords = [
+                "password123",
+                "123456",
+                "qwerty",
+                "hAwT?}cuC:r#kW5",
+                "letmein",
+                "xK9#mP2$vL7@nQ4",
+            ];
+
+            for password in passwords {
+                let sync_result = checker.is_breached(password).unwrap();
+                let compio_result = checker.is_breached_compio(password).await.unwrap();
+                assert_eq!(
+                    sync_result, compio_result,
+                    "sync and compio results should match for '{}'",
+                    password
+                );
+            }
+        });
     }
 }
