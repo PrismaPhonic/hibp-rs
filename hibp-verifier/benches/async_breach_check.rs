@@ -131,20 +131,26 @@ fn bench_tokio_concurrency(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("concurrent_10k");
 
-    // Async API (is_breached_async - spawn_blocking)
+    // Async API using tokio::spawn - models web server behavior where each request
+    // is a separate spawned task that can be work-stolen across threads
     group.bench_function("is_breached_async", |b| {
         b.to_async(&rt).iter_batched(
             || test_data.clone(),
             |data| async move {
-                let futs: Vec<_> = data
+                // Spawn each check as a separate task (like web requests)
+                let handles: Vec<_> = data
                     .into_iter()
-                    .map(|(path, password)| async move {
-                        let checker = BreachChecker::new(&path);
-                        checker.is_breached_async(&password).await
+                    .map(|(path, password)| {
+                        tokio::spawn(async move {
+                            let checker = BreachChecker::new(&path);
+                            checker.is_breached_async(&password).await
+                        })
                     })
                     .collect();
 
-                let results: Vec<_> = join_all(futs).await;
+                // Await all spawned tasks
+                let results: Vec<_> =
+                    join_all(handles).await.into_iter().map(|r| r.unwrap()).collect();
                 black_box(results)
             },
             BatchSize::LargeInput,
@@ -156,14 +162,15 @@ fn bench_tokio_concurrency(c: &mut Criterion) {
         b.to_async(&rt).iter_batched(
             || test_data.clone(),
             |data| async move {
-                let futs: Vec<_> =
-                    data.into_iter()
-                        .map(|(path, password)| async move {
-                            is_breached_tokio_fs(&path, &password).await
-                        })
-                        .collect();
+                let handles: Vec<_> = data
+                    .into_iter()
+                    .map(|(path, password)| {
+                        tokio::spawn(async move { is_breached_tokio_fs(&path, &password).await })
+                    })
+                    .collect();
 
-                let results: Vec<_> = join_all(futs).await;
+                let results: Vec<_> =
+                    join_all(handles).await.into_iter().map(|r| r.unwrap()).collect();
                 black_box(results)
             },
             BatchSize::LargeInput,
@@ -221,7 +228,8 @@ fn bench_compio_concurrency(c: &mut Criterion) {
                 let results: Vec<_> = rt.block_on(async {
                     let mut results = Vec::with_capacity(receivers.len());
                     for rx in receivers {
-                        results.push(rx.await.unwrap());
+                        // Unwrap both dispatcher result and breach check result
+                        results.push(rx.await.unwrap().expect("breach check failed"));
                     }
                     results
                 });
