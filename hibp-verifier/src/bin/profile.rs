@@ -8,7 +8,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
-use hibp_verifier::{BreachChecker, HEX_CHARS, PREFIX_LEN, RECORD_SIZE, dataset_path_from_env};
+use hibp_verifier::{BreachChecker, PREFIX_LEN, RECORD_SIZE, dataset_path_from_env};
 use rdtsc_timer::{Profiler, time};
 use sha1::{Digest, Sha1};
 
@@ -19,6 +19,8 @@ fn profile_password_check<const N: usize>(
     password: &str,
     dataset_path: &Path,
 ) -> bool {
+    let checker = BreachChecker::new(dataset_path);
+
     // Step 1: SHA1 hash
     let hash: [u8; 20] = time!(profiler, "sha1_hash", {
         let mut hasher = Sha1::new();
@@ -26,47 +28,29 @@ fn profile_password_check<const N: usize>(
         hasher.finalize().into()
     });
 
-    // Step 2: Extract prefix hex (zero-allocation)
+    // Step 2: Extract prefix hex
     let prefix_hex: [u8; PREFIX_LEN] = time!(profiler, "extract_prefix", {
-        [
-            HEX_CHARS[(hash[0] >> 4) as usize],
-            HEX_CHARS[(hash[0] & 0x0f) as usize],
-            HEX_CHARS[(hash[1] >> 4) as usize],
-            HEX_CHARS[(hash[1] & 0x0f) as usize],
-            HEX_CHARS[(hash[2] >> 4) as usize],
-        ]
+        BreachChecker::prefix_hex(&hash)
     });
 
-    // Step 3: Build file path (zero-allocation, matching library implementation)
-    let base = dataset_path.as_os_str().as_encoded_bytes();
-    let mut path_buf = [0u8; 512];
-    let path_len = base.len() + 1 + PREFIX_LEN + 4; // +4 for ".bin"
-    let file_path: &str = time!(profiler, "build_path", {
-        path_buf[..base.len()].copy_from_slice(base);
-        path_buf[base.len()] = b'/';
-        path_buf[base.len() + 1..base.len() + 1 + PREFIX_LEN].copy_from_slice(&prefix_hex);
-        path_buf[base.len() + 1 + PREFIX_LEN..path_len].copy_from_slice(b".bin");
-        unsafe { std::str::from_utf8_unchecked(&path_buf[..path_len]) }
+    // Step 3: Build file path and open file.
+    let mut file: File = time!(profiler, "build_path and file_open", {
+        checker.open_file(prefix_hex).expect("Failed to open file")
     });
 
-    // Step 4: Open file
-    let mut file: File = time!(profiler, "file_open", {
-        File::open(file_path).expect("Failed to open file")
-    });
-
-    // Step 5: Read from file.
+    // Step 4: Read from file.
     let (buf, n) = time!(profiler, "file_read", {
         let mut buf = [0u8; 16384];
         let n = file.read(&mut buf).unwrap();
         (buf, n)
     });
 
-    // Step 6: Extract search key
+    // Step 5: Extract search key
     let search_key: [u8; 6] = time!(profiler, "extract_search_key", {
-        hash[2..8].try_into().unwrap()
+        unsafe { hash[2..8].try_into().unwrap_unchecked() }
     });
 
-    // Step 7: Binary search
+    // Step 6: Binary search
     let found: bool = time!(profiler, "binary_search", {
         buf[..n].as_chunks::<RECORD_SIZE>().0.binary_search(&search_key).is_ok()
     });
@@ -90,7 +74,7 @@ fn main() {
     // Profile a known breached password (positive case)
     // "password123" -> SHA1: CBFDAC6008F9CAB4083784CBD1874F76618D2A97
     {
-        let mut profiler: Profiler<7> =
+        let mut profiler: Profiler<6> =
             Profiler::new("Breached password (password123) - POSITIVE PATH");
         let found = profile_password_check(&mut profiler, "password123", dataset_path);
         assert!(found, "password123 should be found");
@@ -100,7 +84,7 @@ fn main() {
     // Profile a non-breached password (negative case)
     // "hAwT?}cuC:r#kW5" -> not in database
     {
-        let mut profiler: Profiler<7> =
+        let mut profiler: Profiler<6> =
             Profiler::new("Non-breached password (hAwT?}cuC:r#kW5) - NEGATIVE PATH");
         let found = profile_password_check(&mut profiler, "hAwT?}cuC:r#kW5", dataset_path);
         assert!(!found, "random password should not be found");
