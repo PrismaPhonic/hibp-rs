@@ -105,9 +105,9 @@ Benchmark results on a modern CPU with data in page cache:
 
 | Benchmark            | Time per batch | Time per password |
 |----------------------+----------------+-------------------|
-| common_passwords_20  | ~16.773 us     | ~0.844 us         |
-| random_passwords_20  | ~17.677 us     | ~0.884 us         |
-| mixed_passwords_40   | ~36.887 us     | ~0.922 us         |
+| common_passwords_20  | ~18.850 us     | ~0.943 us         |
+| random_passwords_20  | ~18.925 us     | ~0.946 us         |
+| mixed_passwords_40   | ~37.165 us     | ~0.929 us         |
 
 The bottleneck is =File::open= and file read overhead. The actual binary
 search completes in nanoseconds.

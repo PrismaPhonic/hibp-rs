@@ -68,11 +68,29 @@ impl<'a> BreachChecker<'a> {
         // file) Use a 16KB stack buffer to avoid allocation. This should provide room for
         // growth over time.
         let mut buf = [0u8; 16384];
-        let n = file.read(&mut buf)?;
+
+        // read() is not guaranteed to return the full file in a single call.
+        // This loop logic handles ensuring we always read to the end.
+        //
+        // I've benchmarked this against getting the metadata for the file
+        // upfront and reading until total bytes read == size from metadata, and
+        // that approach was slower. Likely because fstat() has to copy the full
+        // stat structure(144 bytes on x86_64) from kernel to userspace.
+        let mut total = 0usize;
+        loop {
+            match file.read(&mut buf[total..]) {
+                Ok(0) => break,
+                Ok(n) => {
+                    total += n;
+                }
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(e),
+            }
+        }
 
         let search_key: [u8; 6] = unsafe { hash[2..8].try_into().unwrap_unchecked() };
 
-        Ok(buf[..n].as_chunks::<RECORD_SIZE>().0.binary_search(&search_key).is_ok())
+        Ok(buf[..total].as_chunks::<RECORD_SIZE>().0.binary_search(&search_key).is_ok())
     }
 
     /// Returns the prefix for the hash as hex (first 5 hex chars == first 2.5 bytes)
