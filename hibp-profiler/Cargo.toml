@@ -1,0 +1,10 @@
+[package]
+name = "hibp-profiler"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+hibp-verifier = { path = "../hibp-verifier" }
+rdtsc-timer = { git = "https://github.com/PrismaPhonic/rdtsc-timer", package = "rdtsc-timer" }
+sha1 = "0.10"

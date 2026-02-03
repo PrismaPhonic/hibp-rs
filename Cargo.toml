@@ -1,10 +1,11 @@
 [workspace]
 resolver = "3"
 members = [
-  "hibp-downloader",
+  "hibp-bin-fetch",
+  "hibp-profiler",
   "hibp-verifier",
 ]
 
 [workspace.dependencies]
-hibp-downloader = { path = "hibp-downloader" }
+hibp-bin-fetch = { path = "hibp-bin-fetch" }
 hibp-verifier = { path = "hibp-verifier" }
