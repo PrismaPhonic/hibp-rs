@@ -88,12 +88,12 @@ HIBP_DATA_DIR=/path/to/hibp-data cargo bench -p hibp-verifier
 * Binary Format
 
 The library expects a directory containing 1,048,576 files named =00000.bin=
-through =FFFFF.bin=. Each file contains sorted 8-byte sha1t64 records for the
-corresponding SHA1 prefix.
+through =FFFFF.bin=. Each file contains sorted 6-byte sha1t48 records for the
+corresponding SHA1 prefix (skipping first 2 bytes, as it's redundently in the 2.5 byte prefix of the file name).
 
 ** Record Layout
 
-Each record is the first 8 bytes of a SHA1 hash (truncated to 64 bits). Records are stored in ascending sorted order, enabling binary search.
+Each record is bytes 2 to 8 of a SHA1 hash (truncated to 48 bits). Records are stored in ascending sorted order, enabling binary search.
 
 ** Collision Probability
 
@@ -131,7 +131,7 @@ Each prefix file is memory-mapped, allowing the kernel to manage page caching.
 Binary search uses direct indexing since records are fixed-size:
 
 #+begin_src rust
-let offset = mid * RECORD_SIZE;  // RECORD_SIZE = 8
+let offset = mid * RECORD_SIZE;  // RECORD_SIZE = 6
 let record = &data[offset..offset + RECORD_SIZE];
 #+end_src
 
