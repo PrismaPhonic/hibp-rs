@@ -1,5 +1,34 @@
+use std::time::{Duration, Instant};
+
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use hibp_verifier::{BreachChecker, dataset_path_from_env};
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+
+/// Character sets for password generation
+const ALL_CHARS: &[u8] =
+    b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=[]{}|;:,.<>?";
+
+/// Generates a specified number of random passwords with uniform distribution
+/// Uses a fixed seed for reproducible benchmark results
+pub fn generate_random_passwords(count: usize) -> Vec<String> {
+    let mut rng = StdRng::seed_from_u64(42); // Fixed seed for reproducibility
+    let mut passwords = Vec::with_capacity(count);
+
+    for _ in 0..count {
+        let length = rng.gen_range(8..=64); // Random length between 8 and 64
+        let mut password = String::with_capacity(length);
+
+        for _ in 0..length {
+            let char_index = rng.gen_range(0..ALL_CHARS.len());
+            password.push(ALL_CHARS[char_index] as char);
+        }
+
+        passwords.push(password);
+    }
+
+    passwords
+}
 
 // 20 commonly used passwords (guaranteed to be in breaches)
 const COMMON_PASSWORDS: &[&str] = &[
@@ -88,10 +117,44 @@ fn bench_mixed_passwords(c: &mut Criterion) {
     });
 }
 
+/// Cold page benchmark for sha1t48 format (6-byte records)
+/// Tests performance with 1M random passwords to maximize cold page misses
+fn bench_cold_pages_sha1t48(c: &mut Criterion) {
+    let passwords = generate_random_passwords(1_000_000);
+    let path = dataset_path_from_env();
+    let checker = BreachChecker::new(&path);
+
+    let mut group = c.benchmark_group("cold_pages");
+    // We can't turn the warmup off, but we can set it to a comically low threshold to essentially
+    // turn it off. Note: This panics if set to zero duration.
+    group.warm_up_time(Duration::from_nanos(1));
+
+    group.bench_function("cold_pages_sha1t48_1M", |b| {
+        b.iter_custom(|iters| {
+            let start = Instant::now();
+
+            // Process ALL passwords exactly once, ignoring iters
+            for password in &passwords {
+                black_box(checker.is_breached(password).unwrap());
+            }
+
+            let elapsed = start.elapsed();
+            let passwords_checked = passwords.len() as u64;
+
+            // Calculate per-password timing and scale back to match criterion's expected iteration
+            // count
+            let time_per_password_ns = elapsed.as_nanos() as f64 / passwords_checked as f64;
+            let scaled_nanos = (time_per_password_ns * iters as f64) as u64;
+            Duration::from_nanos(scaled_nanos)
+        })
+    });
+}
+
 criterion_group!(
     benches,
     bench_common_passwords,
     bench_random_passwords,
-    bench_mixed_passwords
+    bench_mixed_passwords,
+    bench_cold_pages_sha1t48,
 );
 criterion_main!(benches);

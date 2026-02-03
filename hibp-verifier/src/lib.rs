@@ -6,7 +6,6 @@
 //! The binary format uses truncated 64-bit SHA1 hashes (8 bytes per record) stored
 //! in sorted order, enabling efficient O(log n) binary search with direct indexing.
 
-use std::cmp::Ordering;
 use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -24,12 +23,12 @@ pub fn dataset_path_from_env() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .unwrap()
-            .join("pwnedpasswords-bin")
+            .join("pwndpasswords-bin")
     })
 }
 
 /// The length of a sha1t64 record in bytes (truncated 64-bit hash).
-pub const RECORD_SIZE: usize = 8;
+pub const RECORD_SIZE: usize = 6;
 
 /// The length of a SHA1 hash prefix used for file naming (5 hex characters).
 pub const PREFIX_LEN: usize = 5;
@@ -105,42 +104,12 @@ impl<'a> BreachChecker<'a> {
         let file = self.open_file(prefix_hex)?;
         let mmap = unsafe { Mmap::map(&file)? };
 
-        // Extract sha1t64 (first 8 bytes of the hash) for comparison
+        // Extract sha1t48 (bytes 2 to 8 of the hash) for comparison
         // SAFETY: hash is garaunteed to have at least 8 bytes.
-        let search_key: [u8; 8] = unsafe { hash[0..8].try_into().unwrap_unchecked() };
+        let search_key: [u8; 6] = unsafe { hash[2..8].try_into().unwrap_unchecked() };
 
-        Ok(binary_search_sha1t64(&mmap, &search_key))
+        Ok(mmap.as_chunks::<RECORD_SIZE>().0.binary_search(&search_key).is_ok())
     }
-}
-
-/// Binary searches for a sha1t64 hash in a memory-mapped binary file.
-///
-/// The file contains fixed-size 8-byte records in sorted order, enabling
-/// direct index calculation.
-#[inline(always)]
-pub fn binary_search_sha1t64(data: &[u8], search_key: &[u8; 8]) -> bool {
-    if data.is_empty() {
-        return false;
-    }
-
-    let record_count = data.len() / RECORD_SIZE;
-    let mut low = 0usize;
-    let mut high = record_count;
-
-    while low < high {
-        let mid = low + (high - low) / 2;
-        let offset = mid * RECORD_SIZE;
-
-        let record = &data[offset..offset + RECORD_SIZE];
-
-        match record.cmp(search_key) {
-            Ordering::Equal => return true,
-            Ordering::Less => low = mid + 1,
-            Ordering::Greater => high = mid,
-        }
-    }
-
-    false
 }
 
 #[cfg(test)]
@@ -191,76 +160,100 @@ mod tests {
     }
 
     #[test]
-    fn test_binary_search_sha1t64() {
+    fn test_binary_search_sha1t48() {
         // Create a small sorted dataset for testing
         let data: Vec<u8> = vec![
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // record 0
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, // record 1
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, // record 2
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // record 3
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // record 0
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x05, // record 1
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x10, // record 2
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // record 3
         ];
 
         // Test finding existing records
-        assert!(binary_search_sha1t64(
-            &data,
-            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]
-        ));
-        assert!(binary_search_sha1t64(
-            &data,
-            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05]
-        ));
-        assert!(binary_search_sha1t64(
-            &data,
-            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10]
-        ));
-        assert!(binary_search_sha1t64(
-            &data,
-            &[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
-        ));
+        assert!(
+            data.as_chunks::<RECORD_SIZE>()
+                .0
+                .binary_search(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x01])
+                .is_ok()
+        );
+        assert!(
+            data.as_chunks::<RECORD_SIZE>()
+                .0
+                .binary_search(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x05])
+                .is_ok()
+        );
+        assert!(
+            data.as_chunks::<RECORD_SIZE>()
+                .0
+                .binary_search(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x10])
+                .is_ok()
+        );
+        assert!(
+            data.as_chunks::<RECORD_SIZE>()
+                .0
+                .binary_search(&[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
+                .is_ok()
+        );
 
         // Test not finding non-existent records
-        assert!(!binary_search_sha1t64(
-            &data,
-            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-        ));
-        assert!(!binary_search_sha1t64(
-            &data,
-            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02]
-        ));
-        assert!(!binary_search_sha1t64(
-            &data,
-            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF]
-        ));
-        assert!(!binary_search_sha1t64(
-            &data,
-            &[0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-        ));
+        assert!(
+            data.as_chunks::<RECORD_SIZE>()
+                .0
+                .binary_search(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+                .is_err()
+        );
+        assert!(
+            data.as_chunks::<RECORD_SIZE>()
+                .0
+                .binary_search(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x02])
+                .is_err()
+        );
+        assert!(
+            data.as_chunks::<RECORD_SIZE>()
+                .0
+                .binary_search(&[0x00, 0x00, 0x00, 0x00, 0x00, 0xFF])
+                .is_err()
+        );
+        assert!(
+            data.as_chunks::<RECORD_SIZE>()
+                .0
+                .binary_search(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+                .is_err()
+        );
     }
 
     #[test]
     fn test_empty_data() {
         let data: Vec<u8> = vec![];
-        assert!(!binary_search_sha1t64(
-            &data,
-            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01]
-        ));
+        assert!(
+            data.as_chunks::<RECORD_SIZE>()
+                .0
+                .binary_search(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x01])
+                .is_err()
+        );
     }
 
     #[test]
     fn test_single_record() {
-        let data: Vec<u8> = vec![0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
+        let data: Vec<u8> = vec![0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
 
-        assert!(binary_search_sha1t64(
-            &data,
-            &[0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0]
-        ));
-        assert!(!binary_search_sha1t64(
-            &data,
-            &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-        ));
-        assert!(!binary_search_sha1t64(
-            &data,
-            &[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
-        ));
+        assert!(
+            data.as_chunks::<RECORD_SIZE>()
+                .0
+                .binary_search(&[0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0])
+                .is_ok()
+        );
+        assert!(
+            data.as_chunks::<RECORD_SIZE>()
+                .0
+                .binary_search(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+                .is_err()
+        );
+        assert!(
+            data.as_chunks::<RECORD_SIZE>()
+                .0
+                .binary_search(&[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
+                .is_err()
+        );
     }
 }
