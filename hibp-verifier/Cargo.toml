@@ -3,18 +3,34 @@ name = "hibp-verifier"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+# Enables async API using tokio's spawn_blocking for file I/O.
+tokio = ["dep:tokio"]
+# Enables async API using compio's native io-uring file I/O.
+compio = ["dep:compio"]
+
 [dependencies]
 sha1 = "0.10"
 rdtsc-timer = { git = "https://github.com/PrismaPhonic/rdtsc-timer", package = "rdtsc-timer" }
 
+tokio = { version = "1", features = ["rt", "fs", "io-util"], optional = true }
+compio = { version = "0.17", features = ["runtime", "io", "dispatcher"], optional = true }
+
 [dev-dependencies]
 hex-literal = "0.4"
-criterion = "0.5"
+criterion = { version = "0.5", features = ["async_tokio"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+compio = { version = "0.17", features = ["runtime", "io", "macros", "dispatcher"] }
 rand = "0.8"
+futures = "0.3"
 
 [[bench]]
 name = "breach_check"
+harness = false
+
+[[bench]]
+name = "async_breach_check"
 harness = false
 
 [[bin]]
