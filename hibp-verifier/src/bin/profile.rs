@@ -4,14 +4,14 @@
 //! to identify where time is spent. Uses the same zero-allocation techniques
 //! as the library.
 
-use hibp_verifier::{BreachChecker, HEX_CHARS, PREFIX_LEN, binary_search_sha1t64};
+use hibp_verifier::{
+    binary_search_sha1t64, dataset_path_from_env, BreachChecker, HEX_CHARS, PREFIX_LEN,
+};
 use memmap2::Mmap;
-use rdtsc_timer::{Profiler, time};
+use rdtsc_timer::{time, Profiler};
 use sha1::{Digest, Sha1};
 use std::fs::File;
 use std::path::Path;
-
-const DATASET_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../pwnedpasswords-bin");
 
 /// Profile a single password check, broken down by step
 /// Uses the same zero-allocation path building as the library
@@ -76,13 +76,15 @@ fn profile_password_check<const N: usize>(
 fn main() {
     println!("=== Breached Password Searcher Profiling ===\n");
 
-    let dataset_path = Path::new(DATASET_PATH);
+    let dataset_path = dataset_path_from_env();
 
     if !dataset_path.exists() {
-        eprintln!("Dataset not found at: {}", DATASET_PATH);
-        eprintln!("Please run the downloader first.");
+        eprintln!("Dataset not found at: {:?}", dataset_path);
+        eprintln!("Set HIBP_DATA_DIR or run the downloader first.");
         std::process::exit(1);
     }
+
+    let dataset_path = dataset_path.as_path();
 
     // Profile a known breached password (positive case)
     // "password123" -> SHA1: CBFDAC6008F9CAB4083784CBD1874F76618D2A97

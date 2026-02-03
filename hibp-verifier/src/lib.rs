@@ -11,7 +11,23 @@ use sha1::{Digest, Sha1};
 use std::cmp::Ordering;
 use std::fs::File;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Environment variable name for specifying the HIBP dataset directory.
+pub const HIBP_DATA_DIR_ENV: &str = "HIBP_DATA_DIR";
+
+/// Returns the dataset path from the HIBP_DATA_DIR environment variable,
+/// or falls back to the default location (pwnedpasswords-bin sibling directory).
+pub fn dataset_path_from_env() -> PathBuf {
+    std::env::var(HIBP_DATA_DIR_ENV)
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("pwnedpasswords-bin")
+        })
+}
 
 /// The length of a sha1t64 record in bytes (truncated 64-bit hash).
 pub const RECORD_SIZE: usize = 8;
@@ -131,14 +147,6 @@ pub fn binary_search_sha1t64(data: &[u8], search_key: &[u8; 8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-
-    fn binary_dataset_path() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join("pwnedpasswords-bin")
-    }
 
     #[test]
     fn test_sha1t64_conversion() {
@@ -163,7 +171,7 @@ mod tests {
         // "password123" is a commonly breached password
         // SHA1: CBFDAC6008F9CAB4083784CBD1874F76618D2A97
         // Prefix: CBFDA
-        let path = binary_dataset_path();
+        let path = dataset_path_from_env();
 
         // Skip test if binary dataset doesn't exist yet
         if !path.exists() {
@@ -178,7 +186,7 @@ mod tests {
 
     #[test]
     fn test_non_breached_password() {
-        let path = binary_dataset_path();
+        let path = dataset_path_from_env();
 
         // Skip test if binary dataset doesn't exist yet
         if !path.exists() {
