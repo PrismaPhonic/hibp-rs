@@ -1,5 +1,5 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use hibp_verifier::{dataset_path_from_env, BreachChecker};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use hibp_verifier::{BreachChecker, dataset_path_from_env};
 
 // 20 commonly used passwords (guaranteed to be in breaches)
 const COMMON_PASSWORDS: &[&str] = &[

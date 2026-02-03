@@ -6,12 +6,13 @@
 //! The binary format uses truncated 64-bit SHA1 hashes (8 bytes per record) stored
 //! in sorted order, enabling efficient O(log n) binary search with direct indexing.
 
-use memmap2::Mmap;
-use sha1::{Digest, Sha1};
 use std::cmp::Ordering;
 use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};
+
+use memmap2::Mmap;
+use sha1::{Digest, Sha1};
 
 /// Environment variable name for specifying the HIBP dataset directory.
 pub const HIBP_DATA_DIR_ENV: &str = "HIBP_DATA_DIR";
@@ -19,14 +20,12 @@ pub const HIBP_DATA_DIR_ENV: &str = "HIBP_DATA_DIR";
 /// Returns the dataset path from the HIBP_DATA_DIR environment variable,
 /// or falls back to the default location (pwnedpasswords-bin sibling directory).
 pub fn dataset_path_from_env() -> PathBuf {
-    std::env::var(HIBP_DATA_DIR_ENV)
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .parent()
-                .unwrap()
-                .join("pwnedpasswords-bin")
-        })
+    std::env::var(HIBP_DATA_DIR_ENV).map(PathBuf::from).unwrap_or_else(|_| {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("pwnedpasswords-bin")
+    })
 }
 
 /// The length of a sha1t64 record in bytes (truncated 64-bit hash).
