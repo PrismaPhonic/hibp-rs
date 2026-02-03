@@ -819,7 +819,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 
 [[package]]
-name = "hibp-downloader"
+name = "hibp-bin-fetch"
 version = "0.1.0"
 dependencies = [
  "clap",
@@ -827,6 +827,15 @@ dependencies = [
  "reqwest",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "hibp-profiler"
+version = "0.1.0"
+dependencies = [
+ "hibp-verifier",
+ "rdtsc-timer",
+ "sha1",
 ]
 
 [[package]]
@@ -838,7 +847,6 @@ dependencies = [
  "futures",
  "hex-literal",
  "rand 0.8.5",
- "rdtsc-timer",
  "sha1",
  "tokio",
 ]

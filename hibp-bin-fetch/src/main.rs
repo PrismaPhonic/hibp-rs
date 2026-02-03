@@ -5,13 +5,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use clap::Parser;
-use hibp_downloader::{Error, TOTAL_PREFIXES, get_completed_prefixes, worker};
+use hibp_bin_fetch::{Error, TOTAL_PREFIXES, get_completed_prefixes, worker};
 use indicatif::{ProgressBar, ProgressStyle};
 use tokio::fs;
 
 #[derive(Parser, Debug)]
-#[command(name = "hibp-downloader")]
-#[command(about = "Download Have I Been Pwned password hashes to compact binary format")]
+#[command(name = "hibp-bin-fetch")]
+#[command(
+    about = "Download Have I Been Pwned password hashes to compact 6-byte binary format for use with hibp-verifier"
+)]
 struct Args {
     /// Output directory for binary files
     #[arg(short, long)]

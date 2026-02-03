@@ -2,6 +2,14 @@
 name = "hibp-verifier"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+publish = true
+description = "High-performance library for checking passwords against the Have I Been Pwned breach database using binary search on sha1t48 format"
+homepage = "https://github.com/PrismaPhonic/hibp-rs"
+repository = "https://github.com/PrismaPhonic/hibp-rs"
+readme = "README.md"
+keywords = ["hibp", "password", "security", "breach", "verification"]
+categories = ["authentication", "cryptography"]
 
 [features]
 default = []
@@ -9,12 +17,9 @@ default = []
 tokio = ["dep:tokio"]
 # Enables async API using compio's native io-uring file I/O.
 compio = ["dep:compio"]
-# Enables the profiling binary (requires rdtsc-timer)
-profiling = ["dep:rdtsc-timer"]
 
 [dependencies]
 sha1 = "0.10"
-rdtsc-timer = { git = "https://github.com/PrismaPhonic/rdtsc-timer", package = "rdtsc-timer", optional = true }
 
 tokio = { version = "1", features = ["rt", "fs", "io-util"], optional = true }
 compio = { version = "0.17", features = ["runtime", "io", "dispatcher"], optional = true }
@@ -34,8 +39,3 @@ harness = false
 [[bench]]
 name = "async_breach_check"
 harness = false
-
-[[bin]]
-name = "profile"
-path = "src/bin/profile.rs"
-required-features = ["profiling"]
