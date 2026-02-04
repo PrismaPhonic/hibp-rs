@@ -106,8 +106,9 @@ impl<'a> BreachChecker<'a> {
 
     /// Returns the prefix for the hash as hex (first 5 hex chars == first 2.5 bytes)
     /// that matches the file name on disk where the hash might be found.
+    #[doc(hidden)]
     #[inline(always)]
-    fn prefix_hex(hash: &[u8; 20]) -> [u8; PREFIX_LEN] {
+    pub fn prefix_hex(hash: &[u8; 20]) -> [u8; PREFIX_LEN] {
         let mut prefix_hex = [0u8; PREFIX_LEN];
 
         prefix_hex[0] = HEX_CHARS[(hash[0] >> 4) as usize];
@@ -133,9 +134,10 @@ impl<'a> BreachChecker<'a> {
         (path_buf, path_len)
     }
 
-    // Build file path without allocation: base_path + '/' + prefix + ".bin"
+    /// Build file path without allocation: base_path + '/' + prefix + ".bin"
+    #[doc(hidden)]
     #[inline(always)]
-    fn open_file(&self, prefix_hex: [u8; PREFIX_LEN]) -> io::Result<File> {
+    pub fn open_file(&self, prefix_hex: [u8; PREFIX_LEN]) -> io::Result<File> {
         let (path_buf, path_len) = self.build_path(prefix_hex);
 
         // SAFETY: path_buf contains valid UTF-8 (base path + '/' + hex prefix + ".bin")
