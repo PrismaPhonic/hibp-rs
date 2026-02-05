@@ -7,18 +7,18 @@ Rust tools for working with the Have I Been Pwned password hash database.
 
 ## Crates
 
-| Crate | Description | Docs |
-|-------|-------------|------|
-| [hibp-downloader](./hibp-downloader/) | Download and convert HIBP data to compact binary format | [![docs.rs](https://docs.rs/hibp-downloader/badge.svg)](https://docs.rs/hibp-downloader) |
-| [hibp-verifier](./hibp-verifier/) | Check passwords against the breach database | [![docs.rs](https://docs.rs/hibp-verifier/badge.svg)](https://docs.rs/hibp-verifier) |
+| Crate                                | Description                                      | Docs                                                                                   |
+|--------------------------------------|--------------------------------------------------|----------------------------------------------------------------------------------------|
+| [hibp-bin-fetch](./hibp-bin-fetch/)  | Download and convert HIBP data to binary format  | [![docs.rs](https://docs.rs/hibp-bin-fetch/badge.svg)](https://docs.rs/hibp-bin-fetch) |
+| [hibp-verifier](./hibp-verifier/)    | Check passwords against the breach database      | [![docs.rs](https://docs.rs/hibp-verifier/badge.svg)](https://docs.rs/hibp-verifier)   |
 
 ## Quick Start
 
 Download the dataset:
 
 ```sh
-cargo install hibp-downloader
-hibp-downloader --output ./hibp-data
+cargo install hibp-bin-fetch
+hibp-bin-fetch --output ./hibp-data
 ```
 
 Check a password:

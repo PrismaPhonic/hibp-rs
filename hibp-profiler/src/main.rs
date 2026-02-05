@@ -1,4 +1,4 @@
-//! Profiling binary for breached-password-searcher
+//! Profiling binary for hibp-verifier
 //!
 //! This binary profiles the individual steps of password breach checking
 //! to identify where time is spent. Uses the same zero-allocation techniques

@@ -271,17 +271,6 @@ let offset = mid * RECORD_SIZE;  // RECORD_SIZE = 6
 let record = &data[offset..offset + RECORD_SIZE];
 ```
 
-## Profiling
-
-A profiling binary is included for detailed timing breakdown:
-
-```sh
-HIBP_DATA_DIR=/path/to/hibp-data cargo run --release --bin profile
-```
-
-This shows cycle counts for each step: SHA1 hashing, prefix extraction, file
-open, file read, and binary search.
-
 ## License
 
 MIT

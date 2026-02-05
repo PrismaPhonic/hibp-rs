@@ -1,21 +1,101 @@
-//! Breached password checker using the Have I Been Pwned dataset.
+//! High-performance library for checking passwords against the Have I Been Pwned
+//! breach database using binary search on a compact 6-byte (sha1t48) format.
 //!
-//! This library provides zero-allocation password breach checking by reading
-//! the HIBP dataset files and performing binary search on the sorted sha1t48 hashes.
+//! This library provides sub-microsecond password breach checking by reading
+//! pre-processed HIBP dataset files and performing binary search on sorted records.
+//! The hot path is zero-allocation for maximum performance.
 //!
-//! The binary format uses truncated 48-bit SHA1 hashes (6 bytes per record) stored
-//! in sorted order, enabling efficient O(log n) binary search with direct indexing.
+//! # Quick Start
+//!
+//! ```rust,ignore
+//! use hibp_verifier::BreachChecker;
+//! use std::path::Path;
+//!
+//! let checker = BreachChecker::new(Path::new("/path/to/hibp-data"));
+//!
+//! match checker.is_breached("password123") {
+//!     Ok(true) => println!("Password found in breach database"),
+//!     Ok(false) => println!("Password not found"),
+//!     Err(e) => eprintln!("Error: {}", e),
+//! }
+//! ```
+//!
+//! # Dataset Setup
+//!
+//! This library requires a pre-downloaded dataset in sha1t48 binary format.
+//! Use [hibp-bin-fetch](https://crates.io/crates/hibp-bin-fetch) to download and
+//! convert the data:
+//!
+//! ```sh
+//! cargo install hibp-bin-fetch
+//! hibp-bin-fetch --output /path/to/hibp-data
+//! ```
+//!
+//! # Binary Format
+//!
+//! The library expects a directory containing 1,048,576 files named `00000.bin`
+//! through `FFFFF.bin`. Each file contains sorted 6-byte records (bytes 2-7 of
+//! SHA1 hashes) for the corresponding prefix.
+//!
+//! This format reduces storage from 77 GB (original text) to 13 GB while enabling
+//! O(log n) binary search with direct indexing—no parsing overhead.
+//!
+//! # Performance
+//!
+//! High concurrency benchmark (10k concurrent lookups, 24 worker threads):
+//!
+//! | API                             | Per check |
+//! |---------------------------------|-----------|
+//! | `is_breached_async` (tokio)     | ~3.1 us   |
+//! | `is_breached_compio` (io-uring) | ~4.6 us   |
+//! | `is_breached` (sync threads)    | ~19.8 us  |
+//!
+//! The sync API is fastest for isolated serial lookups (~1.4 us) but performs
+//! poorly under concurrency due to OS thread creation overhead. For concurrent
+//! workloads, use `is_breached_async` which leverages tokio's blocking thread
+//! pool with work-stealing for optimal throughput.
 //!
 //! # Async Support
 //!
-//! Enable the `tokio` feature for async support. This provides `is_breached_async()`
-//! which uses `spawn_blocking` for file I/O, allowing use from async contexts without
-//! blocking the runtime.
+//! Enable the `tokio` feature for async support:
 //!
-//! Optionally you can use the `compio` feature instead to use the `compio`
-//! runtime, which uses a non-work stealing model along with io-uring (io-uring
-//! requires buffers stay thread local, so it doesn't pair well with tokio's
-//! work stealing model)
+//! ```toml
+//! [dependencies]
+//! hibp-verifier = { version = "0.1", features = ["tokio"] }
+//! ```
+//!
+//! ```rust,ignore
+//! use hibp_verifier::BreachChecker;
+//! use std::path::Path;
+//!
+//! #[tokio::main]
+//! async fn main() -> std::io::Result<()> {
+//!     let checker = BreachChecker::new(Path::new("/path/to/hibp-data"));
+//!
+//!     if checker.is_breached_async("password123").await? {
+//!         println!("Password found in breach database!");
+//!     }
+//!
+//!     Ok(())
+//! }
+//! ```
+//!
+//! The async API performs SHA1 hashing and path construction on the async thread,
+//! then uses `spawn_blocking` only for file I/O. This is faster than `tokio::fs::File`
+//! because it uses a single blocking call instead of multiple calls per I/O operation.
+//!
+//! # Compio Support (io-uring)
+//!
+//! Enable the `compio` feature for native io-uring async support:
+//!
+//! ```toml
+//! [dependencies]
+//! hibp-verifier = { version = "0.1", features = ["compio"] }
+//! ```
+//!
+//! This uses compio's native io-uring file I/O. Note that benchmarks show this is
+//! ~1.5x slower than the tokio `spawn_blocking` approach due to the non-work-stealing
+//! model required by io-uring's thread-local buffer requirements.
 
 use std::fs::File;
 use std::io::{self, Read};

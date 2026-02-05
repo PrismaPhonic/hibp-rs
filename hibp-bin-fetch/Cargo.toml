@@ -1,0 +1,18 @@
+[package]
+name = "hibp-bin-fetch"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Downloads Have I Been Pwned password hashes and converts them to compact 6-byte binary format for use with hibp-verifier"
+homepage = "https://github.com/PrismaPhonic/hibp-rs"
+repository = "https://github.com/PrismaPhonic/hibp-rs"
+readme = "README.md"
+keywords = ["hibp", "password", "security", "breach", "sha1"]
+categories = ["command-line-utilities", "authentication"]
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "fs", "macros", "sync"] }
+reqwest = { version = "0.12", features = ["rustls-tls"] }
+indicatif = "0.17"
