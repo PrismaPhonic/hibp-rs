@@ -1,6 +1,6 @@
 [package]
 name = "hibp-bin-fetch"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT"
 description = "Downloads Have I Been Pwned password hashes and converts them to compact 6-byte binary format for use with hibp-verifier"
@@ -14,5 +14,5 @@ categories = ["command-line-utilities", "authentication"]
 clap = { version = "4", features = ["derive"] }
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "fs", "macros", "sync"] }
-reqwest = { version = "0.12", features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 indicatif = "0.17"
