@@ -48,14 +48,35 @@
 //!
 //! Then use [hibp-verifier](https://crates.io/crates/hibp-verifier) to check passwords
 //! against the downloaded dataset.
+//!
+//! # Serve Mode
+//!
+//! After downloading, `hibp-bin-fetch` can run as an HTTP server that distributes the
+//! dataset to [hibp-sync-client](https://crates.io/crates/hibp-sync-client) instances
+//! on other machines:
+//!
+//! ```sh
+//! hibp-bin-fetch serve --data-dir /var/lib/hibp-sync --listen 0.0.0.0:8765
+//! ```
+//!
+//! The server performs a fresh nightly download at a configurable UTC time and serves
+//! the delta to clients that were one cycle behind. Clients that have fallen further
+//! behind receive a full sync automatically.
 
 pub mod conversion;
+pub mod digest;
 pub mod error;
+pub mod serve;
 pub mod worker;
 
 pub use conversion::{hex_to_nibble, line_to_sha1t48, prefix_to_hex};
 pub use error::Error;
-pub use worker::{get_completed_prefixes, worker};
+pub use worker::{download_and_write_prefix_digest, get_completed_prefixes, worker};
 
-/// Total number of prefix files (16^5 = 1,048,576)
+/// Total number of prefix files (16^5 = 1,048,576).
+#[cfg(not(feature = "testing"))]
 pub const TOTAL_PREFIXES: u32 = 0x100000;
+/// Reduced prefix set for integration tests - allows creating the full dataset without writing 1M
+/// files.
+#[cfg(feature = "testing")]
+pub const TOTAL_PREFIXES: u32 = 16;

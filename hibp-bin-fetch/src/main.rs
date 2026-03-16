@@ -1,26 +1,50 @@
 use std::collections::HashSet;
+use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
+use hibp_bin_fetch::serve::{ServeArgs, run as serve_run};
 use hibp_bin_fetch::{Error, TOTAL_PREFIXES, get_completed_prefixes, worker};
 use indicatif::{ProgressBar, ProgressStyle};
 use tokio::fs;
+
+fn parse_positive_usize(s: &str) -> Result<usize, String> {
+    let n: usize = s.parse().map_err(|_| "must be a positive integer".to_string())?;
+    if n == 0 {
+        return Err("must be >= 1".to_string());
+    }
+    Ok(n)
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "hibp-bin-fetch")]
 #[command(
     about = "Download Have I Been Pwned password hashes to compact 6-byte binary format for use with hibp-verifier"
 )]
-struct Args {
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Download the full HIBP dataset to a local directory
+    Fetch(FetchArgs),
+    /// Run as a sync server, downloading nightly and serving changed files to clients
+    Serve(ServeArgs),
+}
+
+#[derive(clap::Args, Debug)]
+struct FetchArgs {
     /// Output directory for binary files
     #[arg(short, long)]
     output: PathBuf,
 
     /// Number of concurrent download workers
-    #[arg(short = 'j', long, default_value = "64")]
+    #[arg(short = 'j', long, default_value = "64", value_parser = parse_positive_usize)]
     concurrent_workers: usize,
 
     /// Resume a previous download (skip existing files)
@@ -42,14 +66,23 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    let args = Args::parse();
+    let cli = Cli::parse();
 
-    // Validate arguments
+    match cli.command {
+        Command::Fetch(args) => fetch(args).await,
+        Command::Serve(args) => serve_run(args, None).await,
+    }
+}
+
+async fn fetch(args: FetchArgs) -> Result<(), Error> {
+    if args.concurrent_workers == 0 {
+        return Err(Error::InvalidConfig("concurrent workers must be >= 1"));
+    }
+
     if args.resume && args.force {
         return Err(Error::InvalidArgs);
     }
 
-    // Handle output directory
     if args.output.exists() {
         if !args.resume && !args.force {
             return Err(Error::FileExists { path: args.output.clone() });
@@ -61,7 +94,6 @@ async fn main() -> Result<(), Error> {
 
     fs::create_dir_all(&args.output).await?;
 
-    // Determine which prefixes need downloading
     let completed = if args.resume {
         get_completed_prefixes(&args.output).await?
     } else {
@@ -87,19 +119,16 @@ async fn main() -> Result<(), Error> {
         println!("Resuming: {} prefixes already completed", completed.len());
     }
 
-    // Create shared state
     let progress_counter = Arc::new(AtomicU64::new(0));
     let client = reqwest::Client::builder()
         .pool_max_idle_per_host(args.concurrent_workers)
         .build()
         .expect("Failed to create HTTP client");
 
-    // Divide prefixes among workers
     let chunk_size = prefixes_to_download.len().div_ceil(args.concurrent_workers);
     let chunks: Vec<Vec<u32>> =
         prefixes_to_download.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
-    // Set up progress bar
     let progress_bar = if args.progress {
         let pb = ProgressBar::new(total_to_download);
         pb.set_style(
@@ -113,7 +142,6 @@ async fn main() -> Result<(), Error> {
         None
     };
 
-    // Spawn progress updater task
     let progress_counter_clone = Arc::clone(&progress_counter);
     let progress_bar_clone = progress_bar.clone();
     let progress_task = tokio::spawn(async move {
@@ -129,7 +157,6 @@ async fn main() -> Result<(), Error> {
         }
     });
 
-    // Spawn worker tasks
     let mut handles = Vec::with_capacity(chunks.len());
     for chunk in chunks {
         let client = client.clone();
@@ -140,7 +167,6 @@ async fn main() -> Result<(), Error> {
         }));
     }
 
-    // Wait for all workers to complete
     let mut first_error: Option<Error> = None;
     for handle in handles {
         match handle.await {
@@ -152,16 +178,13 @@ async fn main() -> Result<(), Error> {
             }
             Err(e) => {
                 if first_error.is_none() {
-                    first_error = Some(Error::Io(std::io::Error::other(format!(
-                        "Task panicked: {}",
-                        e
-                    ))));
+                    first_error =
+                        Some(Error::Io(io::Error::other(format!("Task panicked: {}", e))));
                 }
             }
         }
     }
 
-    // Clean up progress
     progress_task.abort();
     if let Some(pb) = progress_bar {
         pb.finish_with_message("done");
@@ -173,4 +196,24 @@ async fn main() -> Result<(), Error> {
 
     println!("Download complete!");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn fetch_rejects_zero_workers() {
+        let args = FetchArgs {
+            output: tempfile::tempdir().unwrap().path().join("out"),
+            concurrent_workers: 0,
+            resume: false,
+            force: false,
+            limit: TOTAL_PREFIXES - 1,
+            progress: false,
+        };
+
+        let err = fetch(args).await.unwrap_err();
+        assert!(matches!(err, Error::InvalidConfig(_)));
+    }
 }
