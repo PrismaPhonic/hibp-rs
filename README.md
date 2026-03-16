@@ -7,10 +7,11 @@ Rust tools for working with the Have I Been Pwned password hash database.
 
 ## Crates
 
-| Crate                                | Description                                      | Docs                                                                                   |
-|--------------------------------------|--------------------------------------------------|----------------------------------------------------------------------------------------|
-| [hibp-bin-fetch](./hibp-bin-fetch/)  | Download and convert HIBP data to binary format  | [![docs.rs](https://docs.rs/hibp-bin-fetch/badge.svg)](https://docs.rs/hibp-bin-fetch) |
-| [hibp-verifier](./hibp-verifier/)    | Check passwords against the breach database      | [![docs.rs](https://docs.rs/hibp-verifier/badge.svg)](https://docs.rs/hibp-verifier)   |
+| Crate                                   | Description                                                | Docs                                                                                       |
+|-----------------------------------------|------------------------------------------------------------|--------------------------------------------------------------------------------------------|
+| [hibp-bin-fetch](./hibp-bin-fetch/)     | Download and convert HIBP data; serve it to sync clients   | [![docs.rs](https://docs.rs/hibp-bin-fetch/badge.svg)](https://docs.rs/hibp-bin-fetch)     |
+| [hibp-sync-client](./hibp-sync-client/) | Sync a local dataset replica from an hibp-bin-fetch server | [![docs.rs](https://docs.rs/hibp-sync-client/badge.svg)](https://docs.rs/hibp-sync-client) |
+| [hibp-verifier](./hibp-verifier/)       | Check passwords against the breach database                | [![docs.rs](https://docs.rs/hibp-verifier/badge.svg)](https://docs.rs/hibp-verifier)       |
 
 ## Quick Start
 

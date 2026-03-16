@@ -1,24 +1,22 @@
 [package]
-name = "hibp-bin-fetch"
-version = "0.1.1"
+name = "hibp-sync-client"
+version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Downloads Have I Been Pwned password hashes and converts them to compact 6-byte binary format for use with hibp-verifier"
+description = "Syncs a local HIBP binary dataset from an hibp-bin-fetch serve instance"
 homepage = "https://github.com/PrismaPhonic/hibp-rs"
 repository = "https://github.com/PrismaPhonic/hibp-rs"
-readme = "README.md"
-keywords = ["hibp", "password", "security", "breach", "sha1"]
-categories = ["command-line-utilities", "authentication"]
 
 [dependencies]
 compact_str.workspace = true
 clap = { version = "4", features = ["derive"] }
 thiserror = "2"
-tokio = { version = "1", features = ["rt-multi-thread", "fs", "macros", "sync", "time"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
-indicatif = "0.17"
-sha2 = "0.10"
-ntex = { version = "3", features = ["tokio"] }
+tokio = { version = "1", features = ["rt-multi-thread", "fs", "macros", "io-util"] }
+bytes = "1"
+http = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["client", "client-legacy", "http1"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 zstd = "0.13"
@@ -28,12 +26,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 async-compression = { version = "0.4.41", features = ["tokio", "zstd"] }
 tokio-util = { version = "0.7.18", features = ["io"] }
 async-stream = "0.3.6"
-bytes = "1.11.1"
 futures-util = "0.3.32"
-futures-core = "0.3.32"
-
-[features]
-testing = []
 
 [dev-dependencies]
 tempfile = "3"
+hibp-bin-fetch = { workspace = true, features = ["testing"] }
+ntex = { version = "3", features = ["tokio"] }
