@@ -3,9 +3,12 @@ resolver = "3"
 members = [
   "hibp-bin-fetch",
   "hibp-profiler",
+  "hibp-sync-client",
   "hibp-verifier",
 ]
 
 [workspace.dependencies]
+compact_str = { version = "0.8", features = ["serde"] }
 hibp-bin-fetch = { path = "hibp-bin-fetch" }
+hibp-sync-client = { path = "hibp-sync-client" }
 hibp-verifier = { path = "hibp-verifier" }

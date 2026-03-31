@@ -55,14 +55,14 @@ hibp-bin-fetch --output ./hibp-data --force
 
 ### Options
 
-| Flag                       | Description                                          |
-|----------------------------|------------------------------------------------------|
-| `-o, --output`             | Output directory for binary files (required)         |
-| `-j, --concurrent-workers` | Number of concurrent download workers (default: 64)  |
-| `--resume`                 | Skip existing files and continue downloading         |
-| `--force`                  | Remove existing output directory before starting     |
-| `--limit`                  | Maximum prefix index to download (for testing)       |
-| `--no-progress`            | Disable progress bar                                 |
+| Flag                       | Description                                         |
+|----------------------------|-----------------------------------------------------|
+| `-o, --output`             | Output directory for binary files (required)        |
+| `-j, --concurrent-workers` | Number of concurrent download workers (default: 64) |
+| `--resume`                 | Skip existing files and continue downloading        |
+| `--force`                  | Remove existing output directory before starting    |
+| `--limit`                  | Maximum prefix index to download (for testing)      |
+| `--no-progress`            | Disable progress bar                                |
 
 ## Binary Format
 
@@ -136,9 +136,36 @@ With 64 concurrent workers on a fast connection, expect:
 
 The conversion overhead is negligible compared to network latency.
 
+## Serve Mode
+
+After downloading the dataset, `hibp-bin-fetch` can run as an HTTP server that distributes
+the data to [hibp-sync-client](https://crates.io/crates/hibp-sync-client) instances on
+other machines. This is the recommended approach for keeping multiple hosts in sync: one
+server does the nightly HIBP download and the sync clients pull only what changed.
+
+```sh
+hibp-bin-fetch serve --data-dir /var/lib/hibp-sync --listen 0.0.0.0:8765
+```
+
+The server downloads a fresh copy of the dataset nightly at a configurable time, then
+serves the delta to clients that were one cycle behind. Clients that have fallen further
+behind receive a full sync automatically.
+
+### Serve Options
+
+| Flag                       | Description                                                   |
+|----------------------------|---------------------------------------------------------------|
+| `--data-dir`               | Directory for data, staging, and state files (default: `/var/lib/hibp-sync`) |
+| `--listen`                 | Socket address to listen on (default: `0.0.0.0:8765`)        |
+| `-j, --concurrent-workers` | Workers for the nightly download cycle (default: 64)          |
+| `--download-at`            | UTC time for the nightly download in HH:MM (default: `03:00`) |
+| `--download-on-start`      | Run a download cycle immediately before serving               |
+| `--log-level`              | Log verbosity: error, warn, info, debug, trace                |
+
 ## Related Projects
 
 - [hibp-verifier](https://crates.io/crates/hibp-verifier) - The companion library for checking passwords against this dataset
+- [hibp-sync-client](https://crates.io/crates/hibp-sync-client) - Syncs a local dataset replica from a running serve instance
 - [oschonrock/hibp](https://github.com/oschonrock/hibp) - C++ implementation that inspired the sha1t64 format
 - [HIBP Pwned Passwords API](https://haveibeenpwned.com/API/v3#PwnedPasswords) - The upstream data source
 
