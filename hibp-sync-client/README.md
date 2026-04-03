@@ -5,8 +5,10 @@
 [![docs.rs](https://docs.rs/hibp-sync-client/badge.svg)](https://docs.rs/hibp-sync-client)
 [![maintenance](https://img.shields.io/badge/maintenance-actively--developed-brightgreen)](https://github.com/PrismaPhonic/hibp-rs)
 
-Syncs a local HIBP sha1t48 dataset from an [hibp-bin-fetch](https://crates.io/crates/hibp-bin-fetch)
-serve instance, with support for full syncs, delta syncs, and crash-safe resumption.
+Persistent daemon that keeps a local HIBP sha1t48 dataset in sync with an
+[hibp-bin-fetch](https://crates.io/crates/hibp-bin-fetch) serve instance. Wakes nightly at a
+configurable UTC time, pulls whichever prefix files changed since the last sync (or all of
+them on first run), then sleeps until the following night.
 
 This is the client counterpart to `hibp-bin-fetch serve`. Use it to keep a local replica of
 the HIBP dataset up to date, then check passwords against it with
@@ -14,11 +16,13 @@ the HIBP dataset up to date, then check passwords against it with
 
 ## Features
 
+- Runs as a persistent daemon with a configurable nightly sync time
 - Full sync on first run, delta sync on subsequent runs
 - Segmented sequential downloads with configurable resume granularity
 - Automatic fallback from delta to full sync when the server has advanced multiple cycles
 - Crash-safe: interrupted syncs resume where they left off; stale staging is discarded if the
   server has moved on
+- Sync failures are logged and skipped - the daemon continues to the next nightly cycle
 
 ## Installation
 
@@ -34,20 +38,35 @@ First, ensure an `hibp-bin-fetch serve` instance is running:
 hibp-bin-fetch serve --data-dir /var/lib/hibp-sync --listen 0.0.0.0:8765
 ```
 
-Then run the sync client against it:
+Then run the daemon against it (syncs nightly at 04:00 UTC by default):
 
 ```sh
 hibp-sync-client --server-url http://192.168.1.10:8765 --data-dir ./hibp-data
 ```
 
+Sync immediately on startup, then continue on the nightly schedule:
+
+```sh
+hibp-sync-client --server-url http://192.168.1.10:8765 --data-dir ./hibp-data --sync-on-start
+```
+
+Sync at a custom time and with finer resume granularity:
+
+```sh
+hibp-sync-client --server-url http://192.168.1.10:8765 --data-dir ./hibp-data \
+    --sync-at 05:30 --segments 32
+```
+
 ### Options
 
-| Flag              | Description                                          |
-|-------------------|------------------------------------------------------|
-| `--server-url`    | URL of the hibp-bin-fetch serve instance (required)  |
-| `--data-dir`      | Directory where .bin files are stored (required)     |
-| `--segments`      | Number of segments to split the sync into (default: 16) |
-| `--log-level`     | Log verbosity: error, warn, info, debug, trace       |
+| Flag              | Default  | Description                                          |
+|-------------------|----------|------------------------------------------------------|
+| `--server-url`    | required | URL of the hibp-bin-fetch serve instance             |
+| `--data-dir`      | required | Directory where .bin files are stored                |
+| `--sync-at`       | `04:00`  | UTC time to run the nightly sync cycle (HH:MM)       |
+| `--sync-on-start` | off      | Run a sync cycle immediately before entering the schedule |
+| `--segments`      | `16`     | Number of segments to split the sync into            |
+| `--log-level`     | `info`   | Log verbosity: error, warn, info, debug, trace       |
 
 ## Sync Modes
 

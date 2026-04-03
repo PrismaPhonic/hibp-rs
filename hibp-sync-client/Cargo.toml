@@ -1,6 +1,6 @@
 [package]
 name = "hibp-sync-client"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT"
 description = "Syncs a local HIBP binary dataset from an hibp-bin-fetch serve instance"
