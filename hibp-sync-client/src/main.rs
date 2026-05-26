@@ -83,6 +83,11 @@ async fn main() {
         }
         Err(e) => {
             tracing::error!(error = %e, "sync failed");
+            let mut src = std::error::Error::source(&e);
+            while let Some(cause) = src {
+                tracing::error!(cause = %cause);
+                src = cause.source();
+            }
             process::exit(1);
         }
     }
