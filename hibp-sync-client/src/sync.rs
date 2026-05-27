@@ -169,13 +169,21 @@ async fn fetch_segment_with_retry(
 
     for attempt in 0..MAX_RETRIES {
         if attempt > 0 {
+            let jitter_range_ms = (delay.as_millis() as u64 / 4).max(1);
+            let noise_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .subsec_millis() as u64
+                % (jitter_range_ms * 2);
+            let jittered = delay.saturating_sub(Duration::from_millis(jitter_range_ms))
+                + Duration::from_millis(noise_ms);
             tracing::warn!(
                 attempt,
                 error = %last_result.as_ref().unwrap_err(),
-                delay_ms = delay.as_millis(),
+                delay_ms = jittered.as_millis(),
                 "segment fetch failed, retrying"
             );
-            tokio::time::sleep(delay).await;
+            tokio::time::sleep(jittered).await;
             delay *= 2;
         }
         let result = match client.segment_stream(segment, of, since).await {
