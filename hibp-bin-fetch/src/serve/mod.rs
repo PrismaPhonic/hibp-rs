@@ -142,18 +142,28 @@ pub async fn run(
         Arc::new(RwLock::new(loaded))
     };
 
+    let had_data_before_recovery = server_state.read().unwrap().sync.last_updated.is_some();
+
     recover_if_needed(&dirs, Arc::clone(&server_state)).await?;
 
     if args.download_on_start {
-        tracing::info!("running initial download cycle before serving");
-        let client = build_client(args.concurrent_workers);
-        run_download_cycle(
-            &dirs,
-            &client,
-            args.concurrent_workers,
-            Arc::clone(&server_state),
-        )
-        .await?;
+        let recovery_completed_fresh_download =
+            !had_data_before_recovery && server_state.read().unwrap().sync.last_updated.is_some();
+        if recovery_completed_fresh_download {
+            tracing::info!(
+                "skipping initial download cycle: recovery just committed a complete download"
+            );
+        } else {
+            tracing::info!("running initial download cycle before serving");
+            let client = build_client(args.concurrent_workers);
+            run_download_cycle(
+                &dirs,
+                &client,
+                args.concurrent_workers,
+                Arc::clone(&server_state),
+            )
+            .await?;
+        }
     }
 
     let app_state = AppState {
