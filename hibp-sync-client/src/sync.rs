@@ -177,20 +177,12 @@ async fn fetch_segment_with_retry(
             tokio::time::sleep(delay).await;
             delay *= 2;
         }
-        match client.segment_stream(segment, of, since).await {
-            Ok(decoder) => {
-                let mut stream = Box::pin(decode_segment_stream(decoder));
-                let mut files_written: usize = 0;
-                while let Some(entry_res) = tokio::time::timeout(IDLE_STREAM_TIMEOUT, stream.next())
-                    .await
-                    .map_err(|_| Error::Timeout("idle stream read"))?
-                {
-                    let entry = entry_res?;
-                    let prefix_str = std::str::from_utf8(&entry.prefix)
-                        .map_err(|e| Error::Decode(format!("invalid prefix bytes: {e}")))?;
-                    fs::write(staging.join(format!("{}.bin", prefix_str)), &entry.content).await?;
-                    files_written += 1;
-                }
+        let result = match client.segment_stream(segment, of, since).await {
+            Ok(decoder) => try_stream_segment(decoder, staging).await,
+            Err(e) => Err(e),
+        };
+        match result {
+            Ok(files_written) => {
                 tracing::info!(files = files_written, "segment complete");
                 fs::write(staging.join(format!(".seg.{}.done", segment)), b"").await?;
                 return Ok(());
@@ -201,6 +193,25 @@ async fn fetch_segment_with_retry(
 
     tracing::error!(error = %last_result.as_ref().unwrap_err(), "all retries exhausted");
     last_result
+}
+
+async fn try_stream_segment<R: tokio::io::AsyncRead + Unpin + Send + 'static>(
+    decoder: R,
+    staging: &Path,
+) -> Result<usize, Error> {
+    let mut stream = Box::pin(decode_segment_stream(decoder));
+    let mut files_written: usize = 0;
+    while let Some(entry_res) = tokio::time::timeout(IDLE_STREAM_TIMEOUT, stream.next())
+        .await
+        .map_err(|_| Error::Timeout("idle stream read"))?
+    {
+        let entry = entry_res?;
+        let prefix_str = std::str::from_utf8(&entry.prefix)
+            .map_err(|e| Error::Decode(format!("invalid prefix bytes: {e}")))?;
+        fs::write(staging.join(format!("{}.bin", prefix_str)), &entry.content).await?;
+        files_written += 1;
+    }
+    Ok(files_written)
 }
 
 #[tracing::instrument(skip_all)]
