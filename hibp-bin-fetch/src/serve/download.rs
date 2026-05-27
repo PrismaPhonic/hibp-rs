@@ -72,6 +72,12 @@ pub async fn run_download_cycle(
         return Err(Error::InvalidConfig("concurrent workers must be >= 1"));
     }
 
+    tracing::info!(
+        prefixes = TOTAL_PREFIXES,
+        workers,
+        "download cycle starting"
+    );
+
     // Ensure each cycle starts from a clean staging area.
     clear_staging(&dirs.staging).await?;
 

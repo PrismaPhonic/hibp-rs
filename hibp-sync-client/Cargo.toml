@@ -1,6 +1,6 @@
 [package]
 name = "hibp-sync-client"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 license = "MIT"
 description = "Syncs a local HIBP binary dataset from an hibp-bin-fetch serve instance"
@@ -11,7 +11,7 @@ repository = "https://github.com/PrismaPhonic/hibp-rs"
 compact_str.workspace = true
 clap = { version = "4", features = ["derive"] }
 thiserror = "2"
-tokio = { version = "1", features = ["rt-multi-thread", "fs", "macros", "io-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "fs", "macros", "io-util", "time"] }
 bytes = "1"
 http = "1"
 http-body-util = "0.1"

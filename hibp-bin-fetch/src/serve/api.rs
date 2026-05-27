@@ -49,6 +49,7 @@ pub struct SegmentQuery {
 #[tracing::instrument(skip_all)]
 pub async fn get_status(state: State<AppState>) -> HttpResponse {
     let last_updated = state.server_state.read().unwrap().sync.last_updated;
+    tracing::debug!(last_updated = ?last_updated, "status request");
     HttpResponse::Ok().json(&Status { last_updated })
 }
 
@@ -61,12 +62,17 @@ pub async fn get_changed(state: State<AppState>) -> HttpResponse {
         prev_last_updated: guard.changed.prev_last_updated,
         prefixes: guard.changed.prefixes.clone(),
     };
+    tracing::debug!(
+        last_updated = ?body.last_updated,
+        changed_prefixes = body.prefixes.len(),
+        "changed request"
+    );
     drop(guard);
     HttpResponse::Ok().json(&body)
 }
 
 #[web::get("/v1/segment")]
-#[tracing::instrument(skip_all, fields(segment = query.segment, of = query.of))]
+#[tracing::instrument(skip_all, fields(segment = query.segment, of = query.of, since = query.since.as_deref()))]
 pub async fn get_segment(
     state: State<AppState>,
     query: Query<SegmentQuery>,
@@ -104,13 +110,16 @@ pub async fn get_segment(
         };
         all_changed.sort_unstable();
         let (start, end) = segment_bounds(all_changed.len(), segment, of);
+        let entries = end - start;
+        tracing::info!(entries, "segment stream started (delta)");
         encode_prefix_list(state.dirs.clone(), all_changed[start..end].to_vec())
     } else {
         let (start, end) = segment_bounds(TOTAL_PREFIXES as usize, segment, of);
+        let entries = end - start;
+        tracing::info!(entries, "segment stream started (full)");
         encode_segment(state.dirs.clone(), start as u32, end as u32)
     };
 
-    tracing::info!("segment stream started");
     Ok(HttpResponse::Ok().content_type("application/octet-stream").streaming(stream))
 }
 
