@@ -7,6 +7,7 @@ use std::fmt;
 use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -85,7 +86,7 @@ pub struct ServeArgs {
     #[arg(long, default_value = "03:00")]
     pub download_at: DownloadTime,
 
-    /// Run a download cycle immediately on startup before serving
+    /// Run a download cycle immediately on startup
     #[arg(long)]
     pub download_on_start: bool,
 
@@ -155,13 +156,18 @@ pub async fn run(
         .await?;
     }
 
-    let app_state = AppState { server_state: Arc::clone(&server_state), dirs: Arc::clone(&dirs) };
+    let app_state = AppState {
+        server_state: Arc::clone(&server_state),
+        dirs: Arc::clone(&dirs),
+        busy: Arc::new(AtomicBool::new(false)),
+    };
 
     {
         let dirs = Arc::clone(&dirs);
         let server_state = Arc::clone(&server_state);
         let workers = args.concurrent_workers;
         let download_at = args.download_at.0;
+        let busy = Arc::clone(&app_state.busy);
         tokio::spawn(async move {
             let client = build_client(workers);
             loop {
@@ -172,10 +178,12 @@ pub async fn run(
                 );
                 tokio::time::sleep(delay).await;
                 tracing::info!("starting scheduled download cycle");
+                busy.store(true, Ordering::Release);
                 match run_download_cycle(&dirs, &client, workers, Arc::clone(&server_state)).await {
                     Ok(()) => tracing::info!("scheduled download cycle complete"),
                     Err(e) => tracing::error!(error = %e, "scheduled download cycle failed"),
                 }
+                busy.store(false, Ordering::Release);
             }
         });
     }
