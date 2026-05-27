@@ -11,6 +11,7 @@ use crate::client::Client;
 use crate::error::Error;
 use crate::wire::decode_segment_stream;
 
+const FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(30);
 const IDLE_STREAM_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub struct Config {
@@ -201,16 +202,28 @@ async fn try_stream_segment<R: tokio::io::AsyncRead + Unpin + Send + 'static>(
 ) -> Result<usize, Error> {
     let mut stream = Box::pin(decode_segment_stream(decoder));
     let mut files_written: usize = 0;
-    while let Some(entry_res) = tokio::time::timeout(IDLE_STREAM_TIMEOUT, stream.next())
-        .await
-        .map_err(|_| Error::Timeout("idle stream read"))?
-    {
+    let mut first = true;
+
+    loop {
+        let (timeout, timeout_err) = if first {
+            (FIRST_BYTE_TIMEOUT, "first byte")
+        } else {
+            (IDLE_STREAM_TIMEOUT, "idle stream read")
+        };
+        let Some(entry_res) = tokio::time::timeout(timeout, stream.next())
+            .await
+            .map_err(|_| Error::Timeout(timeout_err))?
+        else {
+            break;
+        };
+        first = false;
         let entry = entry_res?;
         let prefix_str = std::str::from_utf8(&entry.prefix)
             .map_err(|e| Error::Decode(format!("invalid prefix bytes: {e}")))?;
         fs::write(staging.join(format!("{}.bin", prefix_str)), &entry.content).await?;
         files_written += 1;
     }
+
     Ok(files_written)
 }
 
