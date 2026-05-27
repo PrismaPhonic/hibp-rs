@@ -13,6 +13,8 @@ use crate::wire::decode_segment_stream;
 
 const FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(30);
 const IDLE_STREAM_TIMEOUT: Duration = Duration::from_secs(120);
+const BUSY_RETRY_DELAY: Duration = Duration::from_secs(30);
+const MAX_BUSY_RETRIES: u32 = 480;
 
 pub struct Config {
     pub server_url: http::Uri,
@@ -149,7 +151,34 @@ async fn fetch_missing_segments(
             continue;
         }
         tracing::info!(segment = seg + 1, of = segments, "downloading segment");
-        fetch_segment_with_retry(&client, seg, segments, plan.since.as_deref(), staging).await?;
+        let mut busy_retries = 0u32;
+        loop {
+            match fetch_segment_with_retry(&client, seg, segments, plan.since.as_deref(), staging)
+                .await
+            {
+                Ok(()) => break,
+                Err(Error::ServerBusy) if busy_retries < MAX_BUSY_RETRIES => {
+                    busy_retries += 1;
+                    let jitter_range_ms = (BUSY_RETRY_DELAY.as_millis() as u64 / 4).max(1);
+                    let noise_ms = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .subsec_millis() as u64
+                        % (jitter_range_ms * 2);
+                    let delay = BUSY_RETRY_DELAY
+                        .saturating_sub(Duration::from_millis(jitter_range_ms))
+                        + Duration::from_millis(noise_ms);
+                    tracing::warn!(
+                        attempt = busy_retries,
+                        max = MAX_BUSY_RETRIES,
+                        delay_secs = delay.as_secs(),
+                        "server busy, waiting to retry"
+                    );
+                    tokio::time::sleep(delay).await;
+                }
+                Err(e) => return Err(e),
+            }
+        }
     }
 
     Ok(())
@@ -188,6 +217,7 @@ async fn fetch_segment_with_retry(
         }
         let result = match client.segment_stream(segment, of, since).await {
             Ok(decoder) => try_stream_segment(decoder, staging).await,
+            Err(Error::ServerBusy) => return Err(Error::ServerBusy),
             Err(e) => Err(e),
         };
         match result {

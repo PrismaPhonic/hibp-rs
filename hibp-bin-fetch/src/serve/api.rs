@@ -1,5 +1,6 @@
 use std::io;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
 use async_compression::Level;
@@ -24,6 +25,15 @@ use crate::conversion::prefix_to_hex;
 pub struct AppState {
     pub server_state: Arc<RwLock<ServerState>>,
     pub dirs: Arc<Dirs>,
+    pub busy: Arc<AtomicBool>,
+}
+
+struct BusyGuard(Arc<AtomicBool>);
+
+impl Drop for BusyGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
 }
 
 #[derive(Serialize)]
@@ -85,6 +95,12 @@ pub async fn get_segment(
         return Err(ApiError::InvalidSegmentParams);
     }
 
+    if state.busy.swap(true, Ordering::Acquire) {
+        tracing::warn!("rejecting segment request: server is busy");
+        return Err(ApiError::ServerBusy);
+    }
+    let busy = Arc::clone(&state.busy);
+
     let stream = if let Some(ref since_str) = query.since {
         let since_ts = since_str.parse::<DateTime<Utc>>().map_err(|_| {
             tracing::warn!(since = %since_str, "invalid since timestamp");
@@ -112,12 +128,12 @@ pub async fn get_segment(
         let (start, end) = segment_bounds(all_changed.len(), segment, of);
         let entries = end - start;
         tracing::info!(entries, "segment stream started (delta)");
-        encode_prefix_list(state.dirs.clone(), all_changed[start..end].to_vec())
+        encode_prefix_list(state.dirs.clone(), all_changed[start..end].to_vec(), busy)
     } else {
         let (start, end) = segment_bounds(TOTAL_PREFIXES as usize, segment, of);
         let entries = end - start;
         tracing::info!(entries, "segment stream started (full)");
-        encode_segment(state.dirs.clone(), start as u32, end as u32)
+        encode_segment(state.dirs.clone(), start as u32, end as u32, busy)
     };
 
     Ok(HttpResponse::Ok().content_type("application/octet-stream").streaming(stream))
@@ -149,23 +165,32 @@ pub(crate) fn encode_segment(
     dirs: Arc<Dirs>,
     start: u32,
     end: u32,
+    busy: Arc<AtomicBool>,
 ) -> Pin<Box<dyn Stream<Item = Result<ntex::util::Bytes, io::Error>> + Send>> {
-    Box::pin(encode_impl(dirs, (end - start) as usize, start..end))
+    Box::pin(encode_impl(dirs, (end - start) as usize, start..end, busy))
 }
 
 pub(crate) fn encode_prefix_list(
     dirs: Arc<Dirs>,
     prefixes: Vec<u32>,
+    busy: Arc<AtomicBool>,
 ) -> Pin<Box<dyn Stream<Item = Result<ntex::util::Bytes, io::Error>> + Send>> {
-    Box::pin(encode_impl(dirs, prefixes.len(), prefixes.into_iter()))
+    Box::pin(encode_impl(
+        dirs,
+        prefixes.len(),
+        prefixes.into_iter(),
+        busy,
+    ))
 }
 
 fn encode_impl(
     dirs: Arc<Dirs>,
     count: usize,
     iter: impl Iterator<Item = u32> + Send + 'static,
+    busy: Arc<AtomicBool>,
 ) -> impl Stream<Item = Result<ntex::util::Bytes, io::Error>> + Send + 'static {
     let uncompressed_stream = try_stream! {
+        let _guard = BusyGuard(busy);
         yield ntex::util::Bytes::copy_from_slice(&(count as u32).to_le_bytes());
         for prefix in iter {
             let hex = prefix_to_hex(prefix);
@@ -252,7 +277,8 @@ mod tests {
                 .unwrap();
         }
 
-        let stream = encode_prefix_list(dirs.clone(), prefixes.to_vec());
+        let busy = Arc::new(AtomicBool::new(false));
+        let stream = encode_prefix_list(dirs.clone(), prefixes.to_vec(), busy);
         let mut stream = Box::pin(stream);
         let mut result = Vec::new();
         while let Some(chunk) = stream.next().await {

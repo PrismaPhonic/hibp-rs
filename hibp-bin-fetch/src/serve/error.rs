@@ -14,6 +14,9 @@ pub enum ApiError {
     #[error("server data is not one cycle ahead of the requested since timestamp")]
     NotOneCycleBehind,
 
+    #[error("server is busy serving another client; retry later")]
+    ServerBusy,
+
     #[error("internal server error: {0}")]
     Internal(#[from] std::io::Error),
 }
@@ -28,6 +31,7 @@ impl WebResponseError<DefaultError> for ApiError {
         match self {
             Self::InvalidSegmentParams | Self::InvalidSinceTimestamp => StatusCode::BAD_REQUEST,
             Self::NotOneCycleBehind => StatusCode::CONFLICT,
+            Self::ServerBusy => StatusCode::SERVICE_UNAVAILABLE,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -40,6 +44,7 @@ impl WebResponseError<DefaultError> for ApiError {
             Self::InvalidSegmentParams => "invalid_segment_params",
             Self::InvalidSinceTimestamp => "invalid_since_timestamp",
             Self::NotOneCycleBehind => "not_one_cycle_behind",
+            Self::ServerBusy => "server_busy",
             Self::Internal(_) => "internal_error",
         };
         HttpResponse::build(self.status_code()).json(&ApiErrorBody { error: code })
