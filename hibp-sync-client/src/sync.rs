@@ -165,9 +165,9 @@ async fn fetch_missing_segments(
                         .unwrap_or_default()
                         .subsec_millis() as u64
                         % (jitter_range_ms * 2);
-                    let delay =
-                        BUSY_RETRY_DELAY.saturating_sub(Duration::from_millis(jitter_range_ms))
-                            + Duration::from_millis(noise_ms);
+                    let delay = BUSY_RETRY_DELAY
+                        .saturating_sub(Duration::from_millis(jitter_range_ms))
+                        + Duration::from_millis(noise_ms);
                     tracing::warn!(
                         attempt = busy_retries,
                         max = MAX_BUSY_RETRIES,

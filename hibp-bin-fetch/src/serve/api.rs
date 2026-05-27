@@ -175,7 +175,12 @@ pub(crate) fn encode_prefix_list(
     prefixes: Vec<u32>,
     busy: Arc<AtomicBool>,
 ) -> Pin<Box<dyn Stream<Item = Result<ntex::util::Bytes, io::Error>> + Send>> {
-    Box::pin(encode_impl(dirs, prefixes.len(), prefixes.into_iter(), busy))
+    Box::pin(encode_impl(
+        dirs,
+        prefixes.len(),
+        prefixes.into_iter(),
+        busy,
+    ))
 }
 
 fn encode_impl(
