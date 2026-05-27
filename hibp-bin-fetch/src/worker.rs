@@ -39,6 +39,12 @@ pub async fn fetch_prefix_bytes(
     for attempt in 0..MAX_RETRIES {
         if attempt > 0 {
             let delay = RETRY_BASE_DELAY_MS * (1 << attempt.min(10));
+            tracing::warn!(
+                attempt,
+                error = %last_error.as_ref().unwrap(),
+                delay_ms = delay,
+                "HIBP prefix fetch failed, retrying"
+            );
             tokio::time::sleep(Duration::from_millis(delay)).await;
         }
 

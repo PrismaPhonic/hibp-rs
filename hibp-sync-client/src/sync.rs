@@ -11,6 +11,8 @@ use crate::client::Client;
 use crate::error::Error;
 use crate::wire::decode_segment_stream;
 
+const IDLE_STREAM_TIMEOUT: Duration = Duration::from_secs(120);
+
 pub struct Config {
     pub server_url: http::Uri,
     pub data_dir: PathBuf,
@@ -37,6 +39,8 @@ struct Plan {
 
 #[tracing::instrument(skip_all)]
 pub async fn sync(config: &Config) -> Result<Outcome, Error> {
+    tracing::info!(server_url = %config.server_url, segments = config.segments, "starting sync");
+
     if config.segments == 0 {
         return Err(Error::InvalidConfig("segments must be >= 1"));
     }
@@ -124,10 +128,26 @@ async fn fetch_missing_segments(
     let segments = plan.segments;
     let client = Client::new(server_url)?;
 
+    let already_done = (0..segments)
+        .filter(|&s| staging.join(format!(".seg.{}.done", s)).exists())
+        .count();
+    tracing::info!(
+        total = segments,
+        already_done,
+        remaining = segments as usize - already_done,
+        "fetching segments"
+    );
+
     for seg in 0..segments {
         if staging.join(format!(".seg.{}.done", seg)).exists() {
+            tracing::debug!(
+                segment = seg + 1,
+                of = segments,
+                "already downloaded, skipping"
+            );
             continue;
         }
+        tracing::info!(segment = seg + 1, of = segments, "downloading segment");
         fetch_segment_with_retry(&client, seg, segments, plan.since.as_deref(), staging).await?;
     }
 
@@ -148,18 +168,30 @@ async fn fetch_segment_with_retry(
 
     for attempt in 0..MAX_RETRIES {
         if attempt > 0 {
+            tracing::warn!(
+                attempt,
+                error = %last_result.as_ref().unwrap_err(),
+                delay_ms = delay.as_millis(),
+                "segment fetch failed, retrying"
+            );
             tokio::time::sleep(delay).await;
             delay *= 2;
         }
         match client.segment_stream(segment, of, since).await {
             Ok(decoder) => {
                 let mut stream = Box::pin(decode_segment_stream(decoder));
-                while let Some(entry_res) = stream.next().await {
+                let mut files_written: usize = 0;
+                while let Some(entry_res) = tokio::time::timeout(IDLE_STREAM_TIMEOUT, stream.next())
+                    .await
+                    .map_err(|_| Error::Timeout("idle stream read"))?
+                {
                     let entry = entry_res?;
                     let prefix_str = std::str::from_utf8(&entry.prefix)
                         .map_err(|e| Error::Decode(format!("invalid prefix bytes: {e}")))?;
                     fs::write(staging.join(format!("{}.bin", prefix_str)), &entry.content).await?;
+                    files_written += 1;
                 }
+                tracing::info!(files = files_written, "segment complete");
                 fs::write(staging.join(format!(".seg.{}.done", segment)), b"").await?;
                 return Ok(());
             }
@@ -167,6 +199,7 @@ async fn fetch_segment_with_retry(
         }
     }
 
+    tracing::error!(error = %last_result.as_ref().unwrap_err(), "all retries exhausted");
     last_result
 }
 
