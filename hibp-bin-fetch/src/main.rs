@@ -64,7 +64,7 @@ struct FetchArgs {
     progress: bool,
 }
 
-#[tokio::main]
+#[ntex::main]
 async fn main() -> Result<(), Error> {
     let cli = Cli::parse();
 
