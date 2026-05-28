@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bytes::{BufMut as _, Bytes, BytesMut};
 use chrono::{DateTime, Utc};
 use compact_str::CompactString;
@@ -9,6 +11,9 @@ use serde::Deserialize;
 use tokio::io::AsyncRead;
 
 use crate::error::Error;
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 static STATUS_PATH: &[u8] = b"/v1/status";
 static CHANGED_PATH: &[u8] = b"/v1/changed";
@@ -44,8 +49,10 @@ impl Client {
             .authority()
             .ok_or(Error::InvalidServerUrl("missing authority"))?
             .clone();
-        let http_client = hyper_util::client::legacy::Client::builder(TokioExecutor::new())
-            .build(HttpConnector::new());
+        let mut connector = HttpConnector::new();
+        connector.set_connect_timeout(Some(CONNECT_TIMEOUT));
+        let http_client =
+            hyper_util::client::legacy::Client::builder(TokioExecutor::new()).build(connector);
         Ok(Self { scheme, authority, http_client })
     }
 
@@ -62,11 +69,18 @@ impl Client {
 
     async fn get(&self, pq: Bytes) -> Result<Bytes, Error> {
         let req = hyper::Request::get(self.uri(pq)).body(Empty::new())?;
-        let resp = self.http_client.request(req).await?;
+        let resp = tokio::time::timeout(REQUEST_TIMEOUT, self.http_client.request(req))
+            .await
+            .map_err(|_| Error::Timeout("response headers"))?
+            .map_err(Error::Request)?;
         if !resp.status().is_success() {
             return Err(Error::HttpStatus(resp.status()));
         }
-        Ok(resp.into_body().collect().await?.to_bytes())
+        let body = tokio::time::timeout(REQUEST_TIMEOUT, resp.into_body().collect())
+            .await
+            .map_err(|_| Error::Timeout("response body"))?
+            .map_err(Error::ResponseRead)?;
+        Ok(body.to_bytes())
     }
 
     #[tracing::instrument(skip_all)]
@@ -100,7 +114,12 @@ impl Client {
         }
 
         let req = hyper::Request::get(self.uri(buf.freeze())).body(Empty::new())?;
-        let resp = self.http_client.request(req).await?;
+        tracing::debug!("sending request");
+        let resp = tokio::time::timeout(REQUEST_TIMEOUT, self.http_client.request(req))
+            .await
+            .map_err(|_| Error::Timeout("segment response headers"))?
+            .map_err(Error::Request)?;
+        tracing::debug!(status = %resp.status(), "response headers received");
 
         if !resp.status().is_success() {
             return Err(Error::HttpStatus(resp.status()));

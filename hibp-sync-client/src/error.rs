@@ -26,4 +26,7 @@ pub enum Error {
 
     #[error("invalid configuration: {0}")]
     InvalidConfig(&'static str),
+
+    #[error("timed out: {0}")]
+    Timeout(&'static str),
 }

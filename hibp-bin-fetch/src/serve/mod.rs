@@ -171,10 +171,10 @@ pub async fn run(
                     "download cycle scheduled"
                 );
                 tokio::time::sleep(delay).await;
-                if let Err(e) =
-                    run_download_cycle(&dirs, &client, workers, Arc::clone(&server_state)).await
-                {
-                    tracing::error!(error = %e, "scheduled download cycle failed");
+                tracing::info!("starting scheduled download cycle");
+                match run_download_cycle(&dirs, &client, workers, Arc::clone(&server_state)).await {
+                    Ok(()) => tracing::info!("scheduled download cycle complete"),
+                    Err(e) => tracing::error!(error = %e, "scheduled download cycle failed"),
                 }
             }
         });
