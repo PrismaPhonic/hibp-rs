@@ -123,6 +123,9 @@ impl Client {
             .map_err(Error::Request)?;
         tracing::debug!(status = %resp.status(), "response headers received");
 
+        if resp.status() == http::StatusCode::SERVICE_UNAVAILABLE {
+            return Err(Error::ServerBusy);
+        }
         if !resp.status().is_success() {
             return Err(Error::HttpStatus(resp.status()));
         }

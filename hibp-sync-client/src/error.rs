@@ -29,4 +29,7 @@ pub enum Error {
 
     #[error("timed out: {0}")]
     Timeout(&'static str),
+
+    #[error("server busy: retry later")]
+    ServerBusy,
 }
