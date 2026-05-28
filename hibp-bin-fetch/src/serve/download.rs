@@ -2,6 +2,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use chrono::Utc;
 use compact_str::CompactString;
@@ -86,6 +87,33 @@ pub async fn run_download_cycle(
     let chunk_size = all_prefixes.len().div_ceil(workers);
     let chunks: Vec<Vec<u32>> = all_prefixes.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
+    let reporter = {
+        let progress = Arc::clone(&progress);
+        let started = std::time::Instant::now();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                let done = progress.load(Ordering::Relaxed);
+                let pct = ((done as f64 * 100.0 / TOTAL_PREFIXES as f64) * 100.0).round() / 100.0;
+                let elapsed = started.elapsed().as_secs_f64();
+                let eta = if done > 0 {
+                    let rate = done as f64 / elapsed;
+                    let secs = ((TOTAL_PREFIXES as f64 - done as f64) / rate) as u64;
+                    humantime::format_duration(Duration::from_secs(secs)).to_string()
+                } else {
+                    "unknown".to_string()
+                };
+                tracing::info!(
+                    processed = done,
+                    total = TOTAL_PREFIXES,
+                    percent = pct,
+                    eta,
+                    "download progress"
+                );
+            }
+        })
+    };
+
     let mut handles = futures_util::stream::FuturesUnordered::new();
     for chunk in chunks {
         let client = client.clone();
@@ -98,20 +126,27 @@ pub async fn run_download_cycle(
     }
 
     use futures_util::StreamExt;
-    while let Some(res) = handles.next().await {
-        match res {
-            Ok(Ok(())) => {}
-            Ok(Err(e)) => {
-                tracing::error!(error = %e, "download cycle worker failed");
-                return Err(e);
-            }
-            Err(e) => {
-                let err = Error::Io(io::Error::other(format!("task panicked: {e}")));
-                tracing::error!(error = %err, "download cycle worker panicked");
-                return Err(err);
+    let worker_result: Result<(), Error> = async {
+        while let Some(res) = handles.next().await {
+            match res {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    tracing::error!(error = %e, "download cycle worker failed");
+                    return Err(e);
+                }
+                Err(e) => {
+                    let err = Error::Io(io::Error::other(format!("task panicked: {e}")));
+                    tracing::error!(error = %err, "download cycle worker panicked");
+                    return Err(err);
+                }
             }
         }
+        Ok(())
     }
+    .await;
+
+    reporter.abort();
+    worker_result?;
 
     tracing::info!(
         processed = progress.load(Ordering::Relaxed),

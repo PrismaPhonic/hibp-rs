@@ -154,7 +154,11 @@ pub async fn run(
                 "skipping initial download cycle: recovery just committed a complete download"
             );
         } else {
-            tracing::info!("running initial download cycle before serving");
+            tracing::warn!(
+                prefixes = crate::TOTAL_PREFIXES,
+                "HTTP server will not accept connections until the initial download completes; \
+                 progress will be logged every 30s"
+            );
             let client = build_client(args.concurrent_workers);
             run_download_cycle(
                 &dirs,
