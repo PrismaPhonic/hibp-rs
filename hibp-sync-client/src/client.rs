@@ -14,6 +14,7 @@ use crate::error::Error;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
 
 static STATUS_PATH: &[u8] = b"/v1/status";
 static CHANGED_PATH: &[u8] = b"/v1/changed";
@@ -51,6 +52,7 @@ impl Client {
             .clone();
         let mut connector = HttpConnector::new();
         connector.set_connect_timeout(Some(CONNECT_TIMEOUT));
+        connector.set_keepalive(Some(KEEPALIVE_INTERVAL));
         let http_client =
             hyper_util::client::legacy::Client::builder(TokioExecutor::new()).build(connector);
         Ok(Self { scheme, authority, http_client })
